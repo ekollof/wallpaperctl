@@ -24,8 +24,9 @@ class WindowManagerOp:
         if have("xsetroot"):
             run(["xsetroot", "-name", "fsignal:2"], timeout=5)
 
-        if have("xsettingsd"):
-            run(["pkill", "-f", "xsettingsd"], timeout=5)
+        # Standalone xsettingsd only — never when XFCE's xfsettingsd is around
+        if have("xsettingsd") and not pgrep_exact("xfsettingsd"):
+            run(["pkill", "-x", "xsettingsd"], timeout=5)
             time.sleep(0.2)
             subprocess.Popen(
                 ["xsettingsd"],
@@ -34,6 +35,8 @@ class WindowManagerOp:
                 start_new_session=True,
             )
             debug_op(self.name, "xsettingsd restarted", ctx)
+        elif pgrep_exact("xfsettingsd"):
+            debug_op(self.name, "xfsettingsd present; not starting xsettingsd", ctx)
 
         if pgrep_exact("awesome") and have("awesome-client"):
             run(

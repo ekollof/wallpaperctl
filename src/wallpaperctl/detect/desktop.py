@@ -45,22 +45,15 @@ def is_plasma_running() -> bool:
     if pgrep_exact("plasmashell"):
         log.debug("KDE Plasma detected (plasmashell is running)")
         return True
-    if have("dbus-send"):
-        r = run(
-            [
-                "dbus-send",
-                "--session",
-                "--dest=org.kde.plasmashell",
-                "--type=method_call",
-                "--print-reply",
-                "/PlasmaShell",
-                "org.freedesktop.DBus.Peer.Ping",
-            ],
-            timeout=3,
-        )
-        if r.returncode == 0:
-            log.debug("KDE Plasma detected (dbus service available)")
+    # Native session-bus ping (no dbus-send)
+    try:
+        from wallpaperctl.dbus_session import peer_ping
+
+        if peer_ping("org.kde.plasmashell", "/PlasmaShell", timeout=3.0):
+            log.debug("KDE Plasma detected (session bus service)")
             return True
+    except Exception as e:
+        log.debug("Plasma D-Bus probe failed: %s", e)
     return False
 
 

@@ -60,21 +60,58 @@ class GtkThemeOp:
         return self._reload_gtk(ctx)
 
     def _xfce(self, ctx: WallpaperContext) -> bool:
-        if not have("xfconf-query"):
-            return True
-        current_r = run(
-            ["xfconf-query", "-c", "xsettings", "-p", "/Net/ThemeName"],
-            timeout=5,
-        )
-        current = current_r.stdout.strip() if current_r.returncode == 0 else "Greybird"
-        target = ctx.ops.gtk_theme_xfce or current
-        run(
-            ["xfconf-query", "-c", "xsettings", "-p", "/Net/ThemeName", "-s", target],
-            timeout=5,
-        )
+        """
+        XFCE owns appearance via **xfsettingsd** + xfconf (xsettings channel).
+
+        Important: standalone **xsettingsd** (used under Hyprland/tiling WMs) must
+        *not* run at the same time — only one process can own the XSETTINGS
+        selection. Do not force ThemeName here (that fights Appearance).
+        """
+        self._stop_standalone_xsettingsd(ctx)
+        self._ensure_xfsettingsd(ctx)
         if pgrep_exact("xfsettingsd"):
             run(["pkill", "-HUP", "xfsettingsd"], timeout=5)
+            debug_op(self.name, "signaled xfsettingsd (preserving Appearance theme)", ctx)
+        else:
+            debug_op(
+                self.name,
+                "xfsettingsd not running — Appearance changes will not apply "
+                "until it is started (xfsettingsd --daemon)",
+                ctx,
+            )
         return True
+
+    def _stop_standalone_xsettingsd(self, ctx: WallpaperContext) -> None:
+        """Kill standalone xsettingsd so it cannot steal XSETTINGS from XFCE."""
+        if not pgrep_exact("xsettingsd") and not pgrep_full("xsettingsd"):
+            return
+        debug_op(
+            self.name,
+            "stopping standalone xsettingsd (conflicts with xfsettingsd on XFCE)",
+            ctx,
+        )
+        run(["pkill", "-x", "xsettingsd"], timeout=5)
+        time.sleep(0.2)
+
+    def _ensure_xfsettingsd(self, ctx: WallpaperContext) -> None:
+        if pgrep_exact("xfsettingsd"):
+            return
+        if not have("xfsettingsd"):
+            debug_op(self.name, "xfsettingsd binary not found", ctx)
+            return
+        # Always clear standalone daemon first
+        self._stop_standalone_xsettingsd(ctx)
+        debug_op(self.name, "starting xfsettingsd --daemon", ctx)
+        env = None
+        # Inherit a clean DISPLAY/XDG from the session if possible
+        subprocess.Popen(
+            ["xfsettingsd", "--replace", "--daemon"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            env=env,
+        )
+        time.sleep(0.4)
 
     def _reload_gtk(self, ctx: WallpaperContext) -> bool:
         current = self._gget("org.gnome.desktop.interface", "gtk-theme") or "Default"
@@ -171,46 +208,81 @@ class GtkThemeOp:
             env_file.write_text(new, encoding="utf-8")
 
     def _reload_kde_gtkconfig(self) -> None:
-        for bus, proc in (("org.kde.kded6", "kded6"), ("org.kde.kded5", "kded5")):
+        from wallpaperctl.dbus_session import call as dbus_call
+
+        # kded5/kded6 both historically expose org.kde.kded5 on /kded
+        for bus_name, proc, iface in (
+            ("org.kde.kded6", "kded6", "org.kde.kded6"),
+            ("org.kde.kded6", "kded6", "org.kde.kded5"),
+            ("org.kde.kded5", "kded5", "org.kde.kded5"),
+        ):
             if not pgrep_exact(proc):
                 continue
-            if not have("qdbus"):
-                break
-            run(["qdbus", bus, "/kded", "unloadModule", "gtkconfig"], timeout=5)
-            run(["qdbus", bus, "/kded", "loadModule", "gtkconfig"], timeout=5)
+            ok_u, _ = dbus_call(
+                bus_name=bus_name,
+                path="/kded",
+                interface=iface,
+                method="unloadModule",
+                signature="s",
+                body=("gtkconfig",),
+                timeout=5.0,
+            )
+            ok_l, _ = dbus_call(
+                bus_name=bus_name,
+                path="/kded",
+                interface=iface,
+                method="loadModule",
+                signature="s",
+                body=("gtkconfig",),
+                timeout=5.0,
+            )
+            if ok_u or ok_l:
+                import logging
+
+                logging.getLogger("wallpaperctl").debug(
+                    "Reloaded gtkconfig via %s / %s", bus_name, iface
+                )
             break
 
     def _ensure_portal(self) -> None:
         if pgrep_full("xdg-desktop-portal"):
             return
-        for unit in (
-            "xdg-desktop-portal-kde",
-            "xdg-desktop-portal-gnome",
-            "xdg-desktop-portal",
-        ):
-            r = run(["systemctl", "--user", "start", unit], timeout=10)
-            if r.returncode == 0:
-                time.sleep(0.5)
-                return
+        # Best-effort start without requiring systemctl if unavailable
+        if have("systemctl"):
+            for unit in (
+                "xdg-desktop-portal-kde",
+                "xdg-desktop-portal-gnome",
+                "xdg-desktop-portal",
+            ):
+                r = run(["systemctl", "--user", "start", unit], timeout=10)
+                if r.returncode == 0:
+                    time.sleep(0.5)
+                    return
 
     def _emit_portal_signal(self) -> None:
-        if not have("dbus-send"):
-            return
-        run(
-            [
-                "dbus-send",
-                "--session",
-                "--type=signal",
-                "/org/freedesktop/portal/desktop",
-                "org.freedesktop.portal.Settings.SettingChanged",
-                "string:org.freedesktop.appearance",
-                "string:color-scheme",
-                "variant:uint32:1",
-            ],
-            timeout=5,
+        from wallpaperctl.dbus_session import emit_signal
+
+        # org.freedesktop.portal.Settings.SettingChanged (ssv)
+        emit_signal(
+            path="/org/freedesktop/portal/desktop",
+            interface="org.freedesktop.portal.Settings",
+            signal="SettingChanged",
+            signature="ssv",
+            body=(
+                "org.freedesktop.appearance",
+                "color-scheme",
+                ("u", 1),  # prefer-dark
+            ),
         )
 
     def _update_xsettingsd(self, theme: str) -> None:
+        """Update standalone xsettingsd config (Hyprland / tiling WM path only).
+
+        Never start xsettingsd when xfsettingsd (XFCE) is present — they both
+        try to own the XSETTINGS selection and Appearance will look broken.
+        """
+        if pgrep_exact("xfsettingsd"):
+            return
         conf = home() / ".config" / "xsettingsd" / "xsettingsd.conf"
         if not conf.is_file():
             return

@@ -44,9 +44,12 @@ def detect_tools(de: DesktopEnvironment, *, strict: bool = False) -> ToolReport:
         report.warnings.append("jeepney not found: desktop notifications disabled")
 
     if de.plasma:
-        if not have("dbus-send"):
-            report.missing_required.append("dbus-send (required for Plasma wallpapers)")
+        if not report.present.get("jeepney"):
+            report.missing_required.append(
+                "jeepney (session D-Bus client for Plasma wallpapers)"
+            )
     elif de.hyprland and not de.noctalia:
+
         if not have("hyprctl"):
             report.missing_required.append("hyprctl")
     elif de.noctalia:

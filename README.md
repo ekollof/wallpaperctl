@@ -125,10 +125,10 @@ Optional: `~/.config/hass.cfg` (`[auth]` with `server=`, `token=`, `lamp=`).
 
 | Environment | Wallpaper setter |
 |-------------|------------------|
-| KDE Plasma | `dbus-send` PlasmaShell script (+ lockscreen `kscreenlockerrc`) |
+| KDE Plasma | Session D-Bus `evaluateScript` via **jeepney** (+ lockscreen `kscreenlockerrc` file edit) |
 | Hyprland | `hyprctl hyprpaper` (skipped when Noctalia is active) |
 | Noctalia | `qs -c noctalia-shell ipc call wallpaper set … all` |
-| XFCE | `xfconf-query` per monitor/workspace |
+| XFCE | `xfconf-query` for **connected** outputs (xrandr) + existing keys; creates missing multihead/dock props |
 | Cinnamon | `gsettings` picture-uri + options |
 | Fallback X11 | `feh` → `nitrogen` → `hsetroot` → `xwallpaper` → `xsetbg` |
 
@@ -155,8 +155,8 @@ Required for full functionality (soft-deps skip when missing):
 
 - Image: **Pillow** (bundled dependency) for resize, credits, aspect checks, validation
 - Fetch: network (httpx; no curl/ImageMagick required)
-- Notifications: session D-Bus via **jeepney** (no `notify-send`)
-- DE tools as applicable: `dbus-send`, `hyprctl`, `qs`, `xfconf-query`, `gsettings`
+- Session D-Bus: **jeepney** (Plasma wallpaper, notifications, portal/kded hooks — no `dbus-send`/`notify-send`)
+- DE tools only where the DE has no bus API: `hyprctl`, `qs`, `xfconf-query`, `gsettings`
 - Theme: `wallust`, `xrdb`, `nwg-look`, `dunst`/`mako`, `openrgb`, …
 - Fallback setters: `feh`, `nitrogen`, …
 

@@ -65,15 +65,14 @@ def _packaged_icon_path() -> Path | None:
 
 
 def _dbus_notify(title: str, message: str, *, timeout_ms: int) -> bool:
-    try:
-        from jeepney import DBusAddress, MessageType, new_method_call
-        from jeepney.io.blocking import open_dbus_connection
-    except ImportError:
+    from wallpaperctl.dbus_session import call as dbus_call
+    from wallpaperctl.dbus_session import jeepney_available
+
+    if not jeepney_available():
         log.debug("jeepney not installed; cannot send D-Bus notification")
         return False
 
     icon = notification_icon()
-
     # jeepney encodes a{sv} values as (signature, value) tuples
     hints: dict[str, tuple] = {
         "desktop-entry": ("s", APP_NAME),
@@ -82,36 +81,26 @@ def _dbus_notify(title: str, message: str, *, timeout_ms: int) -> bool:
     if icon.startswith("/"):
         hints["image-path"] = ("s", icon)
 
-    # org.freedesktop.Notifications.Notify — signature: susssasa{sv}i
-    addr = DBusAddress(
-        "/org/freedesktop/Notifications",
+    ok, err = dbus_call(
         bus_name="org.freedesktop.Notifications",
+        path="/org/freedesktop/Notifications",
         interface="org.freedesktop.Notifications",
-    )
-    msg = new_method_call(
-        addr,
-        "Notify",
-        "susssasa{sv}i",
-        (
-            APP_NAME,  # app_name
-            0,  # replaces_id
-            icon,  # app_icon (path or theme name)
-            title,  # summary
-            message,  # body
-            [],  # actions (as)
-            hints,  # hints (a{sv})
-            int(timeout_ms),  # expire_timeout
+        method="Notify",
+        signature="susssasa{sv}i",
+        body=(
+            APP_NAME,
+            0,
+            icon,
+            title,
+            message,
+            [],
+            hints,
+            int(timeout_ms),
         ),
+        timeout=5.0,
     )
-
-    try:
-        with open_dbus_connection(bus="SESSION") as conn:
-            reply = conn.send_and_get_reply(msg, timeout=5)
-        if reply.header.message_type == MessageType.method_return:
-            log.debug("D-Bus notification sent with icon %s: %s", icon, title)
-            return True
-        log.debug("D-Bus Notify error reply: %s", reply)
-        return False
-    except Exception as e:
-        log.debug("D-Bus notification failed: %s", e)
-        return False
+    if ok:
+        log.debug("D-Bus notification sent with icon %s: %s", icon, title)
+        return True
+    log.debug("D-Bus notification failed: %s", err)
+    return False

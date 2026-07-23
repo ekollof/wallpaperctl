@@ -36,8 +36,9 @@ This project is **AI-assisted** (see README). Human author: Emiel Kollof.
    commit credentials or copy them into the tree.
 3. **Do not require ImageMagick** for image work. Use **Pillow** (and
    imagehash for perceptual hashes).
-4. **Notifications** use session D-Bus via **jeepney** — not `notify-send` /
-   `dbus-send` for Notify.
+4. **Session D-Bus** goes through **jeepney** (`dbus_session.py`) — Plasma
+   wallpaper, notifications, portal/kded. Do **not** shell out to
+   `dbus-send`, `qdbus`, or `notify-send` for those paths.
 5. Prefer **soft failures**: missing optional tools skip ops with a warning;
    only hard-fail when the primary wallpaper path cannot proceed.
 6. Keep **CLI parity** with the shell flags (`-r`, `-R`, `-C`, `-c`, path) plus
@@ -119,8 +120,8 @@ non-destructive commands unless the user asks to fetch/change wallpaper.
 
 ## What Not To Do
 
-- Do not reintroduce ImageMagick, `curl` (for fetch), or `notify-send` as
-  required tools.
+- Do not reintroduce ImageMagick, `curl` (for fetch), `notify-send`, or
+  `dbus-send`/`qdbus` as required tools for core/D-Bus paths.
 - Do not add a legacy shell-ops bridge back to `~/bin/wallpaper.d`.
 - Do not expand scope into unrelated desktop config (portals, kwallet, etc.)
   unless the user asks.
