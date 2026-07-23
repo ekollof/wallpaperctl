@@ -18,29 +18,29 @@ workflows.
 
 ## Install
 
+From the public GitHub repository:
+
 ### pipx (recommended for CLI tools)
 
 ```bash
-pipx install ~/devel/wallpaperctl
-# or from a git checkout:
-pipx install .
+pipx install git+https://github.com/ekollof/wallpaperctl.git
 ```
 
 ### uv
 
 ```bash
-uv tool install ~/devel/wallpaperctl
-# or editable for development:
-uv tool install --editable ~/devel/wallpaperctl
+uv tool install git+https://github.com/ekollof/wallpaperctl.git
 ```
 
-### venv / pip
+### venv / pip (development checkout)
 
 ```bash
-cd ~/devel/wallpaperctl
+git clone https://github.com/ekollof/wallpaperctl.git
+cd wallpaperctl
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -e ".[dev]"
+# or: uv sync --all-extras
 ```
 
 Entry points: `wallpaperctl` and `wallpaper` (compat alias).
@@ -215,7 +215,8 @@ Required for full functionality (soft-deps skip when missing):
 ## Development
 
 ```bash
-cd ~/devel/wallpaperctl
+git clone https://github.com/ekollof/wallpaperctl.git
+cd wallpaperctl
 uv sync --all-extras
 uv run wallpaperctl detect
 uv run pytest
