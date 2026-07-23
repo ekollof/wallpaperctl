@@ -1,0 +1,43 @@
+# Default operation settings (override in ~/.config/wallpaperctl/ops.toml)
+
+operations_enabled = true
+continue_on_error = true
+debug_operations = false
+
+[enable]
+wallust = true
+xresources = true
+gtk_theme = true
+notifications = true
+openrgb = true
+emacs = true
+window_manager = true
+nwg_look = true
+cinnamon_theme = true
+dynamic_icons = false
+homeassistant = true
+steam_theme = false
+
+[wallust]
+# mapped via flat keys below for simplicity — use top-level too
+
+[ops]
+wallust_backend = "wal"
+wallust_palette = "kmeans"
+gtk_theme_plasma = "Breeze"
+gtk_theme_xfce = "FlatColor-dark"
+gtk_theme_cinnamon = "Mint-Y"
+gtk_theme_standalone = "FlatColor-dark"
+dynamic_icon_theme_name = "wallust-dynamic-icons"
+rgb_color_strategy = "warmest"
+openrgb_color_line_plasma = 3
+openrgb_color_line_standalone = 5
+emacs_theme = "ewal-doom-one"
+wallpaper_scaling_cinnamon = "scaled"
+wallpaper_scaling_gnome = "scaled"
+wallpaper_dir = "~/Wallpapers"
+
+perceptual_hash_threshold = 14
+hash_size = 8
+hash_consensus_slack = 4
+fetch_max_attempts = 5
