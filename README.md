@@ -84,12 +84,17 @@ wallpaperctl setup install        # offer to install missing packages
 wallpaperctl setup wallust        # install shipped wallust.toml + templates + hooks
 wallpaperctl setup wallust-templates  # templates/scripts only (keep your toml)
 wallpaperctl setup wallust --force    # overwrite existing wallust.toml (backs up first)
+wallpaperctl setup themes         # install FlatColor / FlatColor-dark GTK themes
 wallpaperctl setup config         # create dirs + sample ops.toml / config.sh
-wallpaperctl setup all            # config + check + install + wallust
+wallpaperctl setup all            # config + themes + check + install + wallust
 ```
 
-Shipped wallust data lives under `src/wallpaperctl/data/wallust/` (templates,
-hook scripts, sample `wallust.toml`). No secrets; safe to distribute.
+Shipped data under `src/wallpaperctl/data/`:
+
+- **`wallust/`** — `wallust.toml`, templates, hook scripts  
+- **`themes/FlatColor`** (+ `FlatColor-dark` → symlink) — wallust-driven GTK theme  
+
+No secrets; safe to distribute. Themes install to `~/.local/share/themes/`.
 
 
 
@@ -104,22 +109,35 @@ Environment:
 
 ## Configuration
 
-### API keys (fetch)
+### API keys (remote fetch: `wallpaperctl -r`)
 
-Same path as the shell tool — **not** shipped in the package:
+**Automatic download is optional.** Local pick (`wallpaperctl` with no flags),
+a path, or `wallpaperctl -R` need **no** API keys.
 
-`~/.config/wallpaper/config.sh`
+For **`wallpaperctl -r` / `fetch`**, you must register on each stock site and
+create your own free API credentials. wallpaperctl does **not** ship keys; it
+only reads yours from disk or the environment.
+
+| Provider | Where to register / get a key |
+|----------|--------------------------------|
+| [Unsplash](https://unsplash.com/developers) | Developers → create an app → **Access Key** |
+| [Pexels](https://www.pexels.com/api/) | API → sign up → **API key** |
+| [Pixabay](https://pixabay.com/api/docs/) | Account → API → **API key** |
+
+Respect each site’s terms of use, rate limits, and attribution rules (the
+tool can overlay photographer credits when metadata is available).
+
+Put keys in **`~/.config/wallpaper/config.sh`** (not in the package; `chmod 600`):
 
 ```sh
-export UNSPLASH_ACCESS_KEY="..."
-export PEXELS_API_KEY="..."
-export PIXABAY_API_KEY="..."
-export CATEGORIES="nature,landscape,architecture"  # optional default
+export UNSPLASH_ACCESS_KEY="your-unsplash-access-key"
+export PEXELS_API_KEY="your-pexels-api-key"
+export PIXABAY_API_KEY="your-pixabay-api-key"
+export CATEGORIES="nature,landscape,architecture"  # optional default for -r
 ```
 
-Permissions should be `600`. Values can also live in a TOML/YAML-free
-`~/.config/wallpaperctl/config.toml` if you prefer pure Python config
-(keys override / supplement `config.sh`).
+Or set the same variables in the environment. Optional pure-Python config:
+`~/.config/wallpaperctl/config.toml` (`[api]` keys). Never commit real keys.
 
 ### Operations config
 

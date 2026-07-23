@@ -13,6 +13,7 @@ from wallpaperctl.setup.packages import (
     install_system_packages,
     packages_to_install,
 )
+from wallpaperctl.setup.themes_bootstrap import bootstrap_themes, themes_status
 from wallpaperctl.setup.wallust_bootstrap import (
     bootstrap_wallust,
     smoke_test_wallust,
@@ -46,14 +47,18 @@ def run_setup(
         return bootstrap_wallust(force=force, yes=yes, templates_only=True)
     if action in ("config", "bootstrap"):
         return bootstrap_config(force=force)
+    if action in ("themes", "gtk-themes", "flatcolor"):
+        return bootstrap_themes(force=force, yes=yes)
     if action in ("all", "init"):
-        print("=== 1/4 config directories ===")
+        print("=== 1/5 config directories ===")
         bootstrap_config(force=force)
-        print("\n=== 2/4 dependency check ===")
+        print("\n=== 2/5 FlatColor GTK themes ===")
+        bootstrap_themes(force=force, yes=yes)
+        print("\n=== 3/5 dependency check ===")
         cmd_check(de, profile, optional=optional)
-        print("\n=== 3/4 install missing packages ===")
+        print("\n=== 4/5 install missing packages ===")
         cmd_install(de, profile, yes=yes, optional=optional)
-        print("\n=== 4/4 wallust ===")
+        print("\n=== 5/5 wallust ===")
         bootstrap_wallust(force=force, yes=yes)
         smoke_test_wallust()
         print("\nDone. Try: wallpaperctl detect && wallpaperctl -R")
@@ -61,7 +66,7 @@ def run_setup(
 
     print(f"Unknown setup action: {action}", file=sys.stderr)
     print(
-        "Use: check | install | wallust | config | all",
+        "Use: check | install | wallust | themes | config | all",
         file=sys.stderr,
     )
     return 1
@@ -123,6 +128,10 @@ def cmd_check(
     print(f"  binary:  {'yes' if ws['binary'] else 'NO'}")
     print(f"  config:  {ws['config_path']} ({'yes' if ws['config_exists'] else 'missing'})")
     print(f"  wal cache colors: {'yes' if ws['wal_colors'] else 'missing'}")
+    ts = themes_status()
+    print("GTK themes (FlatColor):")
+    print(f"  FlatColor:      {'yes' if ts['flatcolor'] else 'NO — wallpaperctl setup themes'}")
+    print(f"  FlatColor-dark: {'yes' if ts['flatcolor_dark'] else 'NO'}")
     print()
 
     if missing_req:

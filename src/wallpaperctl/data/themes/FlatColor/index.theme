@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=X-GNOME-Metatheme
+Name=FlatColor
+Comment=Wallust-driven flat GTK theme (wallpaperctl)
+Encoding=UTF-8
+
+[X-GNOME-Metatheme]
+GtkTheme=FlatColor
+MetacityTheme=FlatColor
+ButtonLayout=:minimize,maximize,close
+IconTheme=Adwaita

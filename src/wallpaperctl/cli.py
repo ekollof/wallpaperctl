@@ -359,8 +359,16 @@ def _subcommand_main(argv: list[str]) -> int:
         "action",
         nargs="?",
         default="check",
-        choices=["check", "install", "wallust", "wallust-templates", "config", "all"],
-        help="check | install | wallust | wallust-templates | config | all",
+        choices=[
+            "check",
+            "install",
+            "wallust",
+            "wallust-templates",
+            "themes",
+            "config",
+            "all",
+        ],
+        help="check | install | wallust | wallust-templates | themes | config | all",
     )
     p_setup.add_argument(
         "-y",
