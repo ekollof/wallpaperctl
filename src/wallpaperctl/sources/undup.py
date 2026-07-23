@@ -18,6 +18,12 @@ from wallpaperctl.sources.dedup import confidence_score, find_duplicate_groups
 # Lower scores still appear in scan output for review with plain --delete.
 CONFIDENT_DELETE_MIN = 90.0
 
+# Kitty rejects oversized PNG payloads (ENOMEM: PNG image is too large). Keep
+# undup previews small enough for terminal GPU quotas and readable side-by-side.
+KITTY_PREVIEW_MAX_WIDTH = 1400
+KITTY_PREVIEW_MAX_HEIGHT = 420
+KITTY_IMAGE_ID = 42
+
 
 def supports_kitty_graphics() -> bool:
     if hasattr(supports_kitty_graphics, "_cached"):
@@ -61,21 +67,75 @@ def _detect_kitty_graphics() -> bool:
         return False
 
 
+def _terminal_pixel_size() -> tuple[int, int]:
+    """Return (width_px, height_px); (0, 0) if unavailable."""
+    try:
+        import array
+        import fcntl
+        import termios
+
+        buf = array.array("H", [0, 0, 0, 0])
+        fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, buf)
+        # rows, cols, xpixel, ypixel
+        return int(buf[2]), int(buf[3])
+    except Exception:
+        return 0, 0
+
+
+def _drain_stdin(timeout: float = 0.05) -> None:
+    """Discard pending terminal replies (graphics protocol / DA) so they
+    never print as garbage or get consumed by input()."""
+    if not sys.stdin.isatty():
+        return
+    try:
+        import termios
+
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        new = old[:]
+        new[3] &= ~(termios.ICANON | termios.ECHO)
+        new[6][termios.VMIN] = 0
+        new[6][termios.VTIME] = 0
+        termios.tcsetattr(fd, termios.TCSANOW, new)
+        try:
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                r, _, _ = select.select([fd], [], [], 0.01)
+                if not r:
+                    break
+                if not os.read(fd, 4096):
+                    break
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    except Exception:
+        pass
+
+
 def kitty_display(img_bytes: bytes, cols: int = 0) -> None:
+    """Transmit and place a PNG via Kitty graphics protocol.
+
+    Uses quiet mode q=2 so error replies (e.g. ENOMEM) never leak onto the
+    TTY as ``=1;ENOMEM:PNG\\simage\\sis\\stoo\\slarge``.
+    Reuses a fixed image id so each group replaces the previous payload
+    instead of growing kitty's image quota.
+    """
     encoded = base64.b64encode(img_bytes).decode("ascii")
+    img_id = KITTY_IMAGE_ID
     first = True
     while encoded:
         chunk, encoded = encoded[:4096], encoded[4096:]
         m = 1 if encoded else 0
         if first:
-            sys.stdout.write(f"\033_Ga=t,f=100,i=1,q=1,m={m};{chunk}\033\\")
+            # a=T: transmit + place at cursor; q=2: suppress OK and errors
+            ctrl = f"a=T,f=100,i={img_id},q=2,m={m}"
+            if cols > 0:
+                ctrl += f",c={cols}"
+            sys.stdout.write(f"\033_G{ctrl};{chunk}\033\\")
             first = False
         else:
-            sys.stdout.write(f"\033_Gq=1,m={m};{chunk}\033\\")
+            sys.stdout.write(f"\033_Gq=2,m={m};{chunk}\033\\")
         sys.stdout.flush()
-    if cols:
-        sys.stdout.write(f"\033_Ga=p,i=1,q=1,c={cols};\033\\")
-        sys.stdout.flush()
+    _drain_stdin(0.02)
 
 
 def _draw_badge(draw, x, y, text, size=28) -> None:
@@ -84,18 +144,43 @@ def _draw_badge(draw, x, y, text, size=28) -> None:
     draw.text((x, y - r * 0.35), str(text), fill=(0, 0, 0, 255), font_size=size - 4, anchor="mt")
 
 
-def composite_side_by_side(paths: list[Path], max_height: int = 500):
+def _preview_limits() -> tuple[int, int]:
+    """Max (width, height) in pixels for a kitty undup composite."""
+    tw, th = _terminal_pixel_size()
+    max_w = KITTY_PREVIEW_MAX_WIDTH
+    max_h = KITTY_PREVIEW_MAX_HEIGHT
+    if tw > 0:
+        # Fit terminal width with a small margin.
+        max_w = max(320, min(max_w, tw - 20))
+    if th > 0:
+        # About 40% of terminal height, capped.
+        max_h = max(160, min(max_h, th * 2 // 5))
+    return max_w, max_h
+
+
+def composite_side_by_side(
+    paths: list[Path],
+    max_height: int | None = None,
+    max_width: int | None = None,
+):
     from PIL import Image, ImageDraw
+
+    if max_width is None or max_height is None:
+        lim_w, lim_h = _preview_limits()
+        max_width = max_width if max_width is not None else lim_w
+        max_height = max_height if max_height is not None else lim_h
+
+    # Per-image budget so N-wide groups stay under max_width.
+    n = max(2, len(paths))
+    gap = 8
+    per_w = max(80, (max_width - gap * (n - 1)) // n)
 
     images = []
     for p in paths:
         try:
             img = Image.open(p).convert("RGBA")
-            if img.size[1] > max_height:
-                ratio = max_height / img.size[1]
-                img = img.resize(
-                    (int(img.size[0] * ratio), max_height), Image.Resampling.LANCZOS
-                )
+            # Fit each tile into per-image box while preserving aspect.
+            img.thumbnail((per_w, max_height), Image.Resampling.LANCZOS)
             images.append(img)
         except Exception as e:
             print(f"  Error loading {p}: {e}", file=sys.stderr)
@@ -104,7 +189,6 @@ def composite_side_by_side(paths: list[Path], max_height: int = 500):
     if len(images) < 2:
         return None
 
-    gap = 10
     total_w = sum(img.size[0] for img in images) + gap * (len(images) - 1)
     max_h = max(img.size[1] for img in images)
     canvas = Image.new("RGBA", (total_w, max_h), (30, 30, 30, 255))
@@ -113,10 +197,22 @@ def composite_side_by_side(paths: list[Path], max_height: int = 500):
     for i, img in enumerate(images, 1):
         y = (max_h - img.size[1]) // 2
         canvas.paste(img, (x, y), img)
-        badge_size = max(20, min(img.size[0], img.size[1]) // 8)
+        badge_size = max(16, min(img.size[0], img.size[1]) // 8)
         _draw_badge(draw, x + img.size[0] - badge_size, y + badge_size, i, badge_size)
         x += img.size[0] + gap
+
+    # Final safety clamp (e.g. odd aspect ratios).
+    if canvas.size[0] > max_width or canvas.size[1] > max_height:
+        canvas.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
     return canvas
+
+
+def composite_to_png_bytes(composite) -> bytes:
+    """Encode a preview composite as a compact RGB PNG."""
+    buf = io.BytesIO()
+    # RGB is smaller than RGBA; optimize for kitty transfer size.
+    composite.convert("RGB").save(buf, format="PNG", optimize=True, compress_level=6)
+    return buf.getvalue()
 
 
 def run_undup(
@@ -186,13 +282,10 @@ def run_undup(
         if kitty:
             composite = composite_side_by_side(paths)
             if composite:
-                cols = shutil.get_terminal_size().columns - 2
-                buf = io.BytesIO()
-                composite.save(buf, format="PNG")
-                kitty_display(buf.getvalue(), cols=cols)
-                if delete:
-                    sys.stdout.write("\n")
-                    sys.stdout.flush()
+                cols = max(20, shutil.get_terminal_size().columns - 2)
+                kitty_display(composite_to_png_bytes(composite), cols=cols)
+                sys.stdout.write("\n")
+                sys.stdout.flush()
 
         if delete:
             if confident:
@@ -215,6 +308,8 @@ def run_undup(
                         "skipping (use --delete without --confident to review)."
                     )
             else:
+                # Drop any leftover graphics-protocol bytes before blocking input.
+                _drain_stdin(0.05)
                 print("  Keep which file(s)?")
                 print("    [a] Keep all")
                 print("    [1] Keep first only, delete rest")

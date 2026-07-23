@@ -1,4 +1,4 @@
-"""Tests for undup --confident / --delete behaviour."""
+"""Tests for undup --confident / --delete behaviour and kitty previews."""
 
 from __future__ import annotations
 
@@ -8,11 +8,17 @@ from unittest.mock import MagicMock
 from PIL import Image
 
 from wallpaperctl.sources.dedup import Fingerprint, confidence_score
-from wallpaperctl.sources.undup import CONFIDENT_DELETE_MIN, run_undup
+from wallpaperctl.sources.undup import (
+    CONFIDENT_DELETE_MIN,
+    composite_side_by_side,
+    composite_to_png_bytes,
+    kitty_display,
+    run_undup,
+)
 
 
-def _jpg(path: Path, color: tuple[int, int, int] = (40, 80, 120)) -> Path:
-    Image.new("RGB", (64, 48), color).save(path, quality=90)
+def _jpg(path: Path, color: tuple[int, int, int] = (40, 80, 120), size=(64, 48)) -> Path:
+    Image.new("RGB", size, color).save(path, quality=90)
     return path
 
 
@@ -99,3 +105,41 @@ def test_confident_alone_implies_delete_high_only(tmp_path: Path, monkeypatch):
     assert rc == 0
     assert a.is_file() and b.is_file()
     prompt.assert_not_called()
+
+
+def test_composite_scales_large_wallpapers(tmp_path: Path):
+    """Side-by-side previews must stay under kitty-friendly dimensions."""
+    a = _jpg(tmp_path / "a.jpg", (10, 20, 30), size=(3840, 2160))
+    b = _jpg(tmp_path / "b.jpg", (200, 100, 50), size=(3840, 2160))
+    composite = composite_side_by_side([a, b], max_width=1400, max_height=420)
+    assert composite is not None
+    w, h = composite.size
+    assert w <= 1400
+    assert h <= 420
+    png = composite_to_png_bytes(composite)
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    # Compact enough that kitty should not ENOMEM on typical quotas.
+    assert len(png) < 1_500_000
+
+
+def test_kitty_display_uses_quiet_mode(monkeypatch):
+    """q=2 must be used so ENOMEM replies never leak as TTY garbage."""
+    writes: list[str] = []
+
+    class _Stdout:
+        def write(self, s: str) -> int:
+            writes.append(s)
+            return len(s)
+
+        def flush(self) -> None:
+            pass
+
+    monkeypatch.setattr("wallpaperctl.sources.undup.sys.stdout", _Stdout())
+    monkeypatch.setattr("wallpaperctl.sources.undup._drain_stdin", lambda *a, **k: None)
+
+    # Tiny fake PNG payload
+    kitty_display(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32, cols=80)
+    joined = "".join(writes)
+    assert "q=2" in joined
+    assert "q=1" not in joined
+    assert "a=T" in joined
