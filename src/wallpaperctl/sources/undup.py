@@ -14,6 +14,10 @@ from pathlib import Path
 from wallpaperctl.config import OpsConfig
 from wallpaperctl.sources.dedup import confidence_score, find_duplicate_groups
 
+# Auto-delete only when confidence is clearly high (exact / near-exact matches).
+# Lower scores still appear in scan output for review with plain --delete.
+CONFIDENT_DELETE_MIN = 90.0
+
 
 def supports_kitty_graphics() -> bool:
     if hasattr(supports_kitty_graphics, "_cached"):
@@ -191,14 +195,25 @@ def run_undup(
                     sys.stdout.flush()
 
         if delete:
-            if confident and conf > 90:
-                print("  High confidence; deleting extras (keeping first).")
-                for p in paths[1:]:
-                    try:
-                        p.unlink()
-                        print(f"  Deleted {p}")
-                    except OSError as e:
-                        print(f"  Failed to delete {p}: {e}", file=sys.stderr)
+            if confident:
+                # --confident: only auto-delete high-confidence groups; never
+                # fall through to interactive prompts for weak matches.
+                if conf >= CONFIDENT_DELETE_MIN:
+                    print(
+                        f"  High confidence ({conf:.0f}%); "
+                        "deleting extras (keeping first)."
+                    )
+                    for p in paths[1:]:
+                        try:
+                            p.unlink()
+                            print(f"  Deleted {p}")
+                        except OSError as e:
+                            print(f"  Failed to delete {p}: {e}", file=sys.stderr)
+                else:
+                    print(
+                        f"  Confidence {conf:.0f}% < {CONFIDENT_DELETE_MIN:.0f}%; "
+                        "skipping (use --delete without --confident to review)."
+                    )
             else:
                 print("  Keep which file(s)?")
                 print("    [a] Keep all")

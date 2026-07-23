@@ -307,7 +307,10 @@ def _subcommand_main(argv: list[str]) -> int:
     p_undup.add_argument(
         "--confident",
         action="store_true",
-        help="Auto-delete high-confidence duplicates (implies --delete)",
+        help=(
+            "Auto-delete only high-confidence duplicates (≥90%%); "
+            "skip weaker matches (implies --delete, never prompts)"
+        ),
     )
     p_undup.add_argument(
         "--no-kitty",
