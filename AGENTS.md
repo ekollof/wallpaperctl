@@ -91,9 +91,11 @@ the user explicitly runs a delete/undup path.
 ## Development Commands
 
 ```bash
-cd ~/devel/wallpaperctl
+git clone https://github.com/ekollof/wallpaperctl.git
+cd wallpaperctl
 # install / refresh
 uv pip install -e ".[dev]"   # or: pip install -e ".[dev]"
+# or: uv sync --all-extras
 
 uv run pytest                # or: .venv/bin/pytest -q
 uv run wallpaperctl detect
@@ -131,10 +133,9 @@ non-destructive commands unless the user asks to fetch/change wallpaper.
 
 ## Related Legacy (reference only)
 
-Historical behaviour may be understood by reading (not calling):
-
-- `~/bin/wallpaper`, `~/bin/wallpaper.d/`
-- `~/devel/wall-undup`
+Historical behaviour may be understood by reading (not calling) any remaining
+POSIX-shell wallpaper scripts on the maintainer’s machine (`wallpaper`,
+`wallpaper.d`, undup helpers). Prefer the implementations in this repository.
 
 When porting behaviour, match intent; improve fragility (locks, pure Python,
 multi-hash dedup) rather than copying shell bugs.
