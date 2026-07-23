@@ -1,0 +1,93 @@
+{% set base_red = color4 | redf | float %}
+{% set base_green = color4 | greenf | float %}
+{% set base_blue = color4 | bluef | float %}
+
+{% set hover_red = base_red + 0.05 %}
+{% if hover_red > 1.0 %}{% set hover_red = 1.0 %}{% endif %}
+{% set hover_green = base_green + 0.05 %}
+{% if hover_green > 1.0 %}{% set hover_green = 1.0 %}{% endif %}
+{% set hover_blue = base_blue + 0.05 %}
+{% if hover_blue > 1.0 %}{% set hover_blue = 1.0 %}{% endif %}
+
+{% set selected_red = base_red + 0.05 %}
+{% if selected_red > 1.0 %}{% set selected_red = 1.0 %}{% endif %}
+{% set selected_green = base_green + 0.05 %}
+{% if selected_green > 1.0 %}{% set selected_green = 1.0 %}{% endif %}
+{% set selected_blue = base_blue + 0.05 %}
+{% if selected_blue > 1.0 %}{% set selected_blue = 1.0 %}{% endif %}
+
+(
+    base: (
+        red: {{ base_red }},
+        green: {{ base_green }},
+        blue: {{ base_blue }},
+        alpha: 1.0,
+    ),
+    hover: (
+        red: {{ hover_red }},
+        green: {{ hover_green }},
+        blue: {{ hover_blue }},
+        alpha: 1.0,
+    ),
+    pressed: (
+        red: {{ base_red * 0.6 }},
+        green: {{ base_green * 0.6 }},
+        blue: {{ base_blue * 0.6 }},
+        alpha: 1.0,
+    ),
+    selected: (
+        red: {{ selected_red }},
+        green: {{ selected_green }},
+        blue: {{ selected_blue }},
+        alpha: 1.0,
+    ),
+    selected_text: (
+        red: {{ base_red }},
+        green: {{ base_green }},
+        blue: {{ base_blue }},
+        alpha: 1.0,
+    ),
+    focus: (
+        red: {{ base_red }},
+        green: {{ base_green }},
+        blue: {{ base_blue }},
+        alpha: 1.0,
+    ),
+    divider: (
+        red: 0.0,
+        green: 0.0,
+        blue: 0.0,
+        alpha: 1.0,
+    ),
+    on: (
+        {% set l = 0.299 * base_red + 0.587 * base_green + 0.114 * base_blue %}
+        red: {% if l > 0.5 %}0.0{% else %}1.0{% endif %},
+        green: {% if l > 0.5 %}0.0{% else %}1.0{% endif %},
+        blue: {% if l > 0.5 %}0.0{% else %}1.0{% endif %},
+        alpha: 1.0,
+    ),
+    disabled: (
+        red: {{ base_red }},
+        green: {{ base_green }},
+        blue: {{ base_blue }},
+        alpha: 1.0,
+    ),
+    on_disabled: (
+        red: {{ base_red * 0.5 }},
+        green: {{ base_green * 0.5 }},
+        blue: {{ base_blue * 0.5 }},
+        alpha: 1.0,
+    ),
+    border: (
+        red: {{ base_red }},
+        green: {{ base_green }},
+        blue: {{ base_blue }},
+        alpha: 1.0,
+    ),
+    disabled_border: (
+        red: {{ base_red }},
+        green: {{ base_green }},
+        blue: {{ base_blue }},
+        alpha: 0.5,
+    ),
+)

@@ -51,6 +51,7 @@ packages = ["src/wallpaperctl"]
 [tool.hatch.build.targets.wheel.force-include]
 "src/wallpaperctl/defaults.toml" = "wallpaperctl/defaults.toml"
 "src/wallpaperctl/assets" = "wallpaperctl/assets"
+"src/wallpaperctl/data" = "wallpaperctl/data"
 
 
 

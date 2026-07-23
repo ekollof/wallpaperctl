@@ -79,7 +79,17 @@ wallpaperctl reload-wm --restart # full Cinnamon restart
 wallpaperctl cleanup             # prune theme backups / stale temps
 wallpaperctl verify              # icons + cinnamon + wallust colors
 wallpaperctl verify icons
+wallpaperctl setup check          # dependency audit for this desktop
+wallpaperctl setup install        # offer to install missing packages
+wallpaperctl setup wallust        # install shipped wallust.toml + templates + hooks
+wallpaperctl setup wallust-templates  # templates/scripts only (keep your toml)
+wallpaperctl setup wallust --force    # overwrite existing wallust.toml (backs up first)
+wallpaperctl setup config         # create dirs + sample ops.toml / config.sh
+wallpaperctl setup all            # config + check + install + wallust
 ```
+
+Shipped wallust data lives under `src/wallpaperctl/data/wallust/` (templates,
+hook scripts, sample `wallust.toml`). No secrets; safe to distribute.
 
 
 

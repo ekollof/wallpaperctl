@@ -1,0 +1,115 @@
+# wallust v3.1
+#
+# If comming from v2: https://explosion-mental.codeberg.page/wallust/v3.html#wallusttoml
+#
+# THIS IS A SAMPLE AND EASY TO COMPREHEND CONFIG, for more info:
+#    `man wallust.5` or check the wiki in the repo
+#
+# You can copy this file to ~/.config/wallust/wallust.toml
+
+# -- global space -- # values below can be overwritten by command line flags
+
+# How the image is parse, in order to get the colors:
+# full - resized - wal - thumb -  fastresize - kmeans
+backend = "wal"
+
+# What color space to use to produce and select the most prominent colors:
+# lab - labmixed - lch - lchmixed
+color_space = "labmixed"
+
+threshold = 2
+fallback_colors = ["#FFFFFF", "#000000", "#D3D3D3", "#808080"]
+
+# Use the most prominent colors in a way that makes sense, a scheme color palette:
+# dark - dark16 - darkcomp - darkcomp16
+# light - light16 - lightcomp - lightcomp16
+# harddark - harddark16 - harddarkcomp - harddarkcomp16
+# softdark - softdark16 - softdarkcomp - softdarkcomp16
+# softlight - softlight16 - softlightcomp - softlightcomp16
+palette = "kmeans"
+
+# Ensures a "readable contrast" (OPTIONAL, disabled by default)
+# Should only be enabled when you notice an unreadable contrast frequently happening
+# with your images. The reference color for the contrast is the background color.
+check_contrast = true
+
+# Color saturation, between [1% and 100%] (OPTIONAL, disabled by default)
+# usually something higher than 50 increases the saturation and below
+# decreases it (on a scheme with strong and vivid colors)
+# Was 10 (muddy greys in ANSI green/cyan — breaks remote htop etc.)
+saturation = 45
+
+# Alpha value for templating, by default 100 (no other use whatsoever)
+alpha = 75
+
+pywal = true
+
+# -- templating -- # (OPTIONAL)
+# An `entry` requires two files:
+# 1. template: A relative path that points to a file where wallust.toml is located, usually at `~/.config/wallust/`
+# 2. target: Absolute path in which to place a file with generated templated values
+
+# OPTIONALLY It can accept `new_engine = true`: This "new engine" difers by using  double brackets like `{{variable}}`
+# instead of one like usual, which helps with file formats that use brackets like json. With the `new_engine` enabled
+# you can escape and produce a literal `{{` by `{{{{}}`, and for `}}` you escape it with `{{}}}}`.
+
+# This is the most common way of integrating `wallust` generated palette to some program.
+# Below a simple example that searches for `config-path/zathurarc` and puts the
+# newly created file to `~/.config/zathura/zathurarc` and it uses the `new_engine` flag for double brackets.
+
+# [[entry]]
+# template = "zathurarc"
+# target = "~/.config/zathura/zathurarc"
+# new_engine = true
+
+[templates]
+colors = { template = "colors", target = "~/.cache/wal/colors", pywal = true }
+awesome = { template = "awesome-colors.lua", target = "~/.cache/wal/awesome-colors.lua", new_engine = true }
+rofi = { template = "colors-rofi.rasi", target = "~/.config/rofi/wallust/colors-rofi.rasi", new_engine = true }
+oomox = { template = "colors-oomox", target = "~/.cache/wal/colors-oomox", pywal = true }
+sequence = { template = "colors.sh", target = "~/.cache/wal/colors.sh", new_engine = true }
+css = { template = "colors.css", target = "~/.cache/wal/colors.css", new_engine = true }
+json = { template = "colors.json", target = "~/.cache/wal/colors.json", pywal = true }
+vim = { template = "colors-wal.vim", target = "~/.cache/wal/colors-wal.vim", pywal = true }
+xrdb = { template = "colors.Xresources", target = "~/.cache/wal/colors.Xresources", pywal = true }
+gtk2 = { template = "gtk2.base", target = "~/.local/share/themes/FlatColor/gtk-2.0/gtkrc", new_engine = true }
+gtk3 = { template = "gtk3.0.base", target = "~/.local/share/themes/FlatColor/gtk-3.0/gtk.css", pywal = true }
+gtk320 = { template = "gtk3.20.base", target = "~/.local/share/themes/FlatColor/gtk-3.20/gtk.css", pywal = true }
+gtk4 = { template = "gtk4.0.base", target = "~/.config/gtk-4.0/gtk.css", new_engine = true }
+hyprpaper = { template = "hyprpaper.conf", target = "~/.config/hypr/hyprpaper.conf", pywal = true }
+hyprland = { template = "colors-hyprland.conf", target = "~/.cache/wal/colors-hyprland.conf", pywal = true }
+waybar = { template = "colors-waybar.css", target = "~/.cache/wal/colors-waybar.css", pywal = true }
+cosmic = { template = "cosmic-wallpaper", target = "~/.config/cosmic/com.system76.CosmicBackground/v1/all", pywal = true}
+cosmicaccent = { template = "cosmic_accent_dark.j2", target="~/.config/cosmic/com.system76.CosmicTheme.Dark/v1/accent" }
+starship = { template = "starship.toml", target = "~/.config/starship.toml"}
+xonsh = { template = "xonshrc.py", target = "~/.xonshrc" }
+neomutt = { template = "pywal.muttrc", target = "~/.cache/wal/colors.muttrc.unused", new_engine = true }
+weechat = { template = "colors-weechat.conf", target = "~/.cache/wal/colors-weechat.conf", new_engine = true }
+kitty = { template = "colors-kitty.conf", target = "~/.config/kitty/current-theme.conf", new_engine = true }
+btop = { template = "colors-btop.theme", target = "~/.config/btop/themes/noctalia.theme", new_engine = true }
+steam = { template = "steam.css", target = "~/.cache/wallust/steam-webkit.css", new_engine = true }
+
+[hooks]
+neomutt = 'python3 ~/.config/wallust/scripts/wallust-muttrc.py'
+opencode = 'python3 ~/.config/wallust/scripts/generate-wallust-theme.py && pkill -USR2 opencode 2>/dev/null || true'
+# Brighten ANSI slots for remote TUIs (htop CPU% = green), then reload kitty
+kitty = 'python3 ~/.config/wallust/scripts/brighten-kitty-theme.py && killall -SIGUSR1 kitty 2>/dev/null || true'
+# weechat hook removed — wallust.py inside weechat watches colors.json directly
+
+# REMINDER Variables and methods that can be used with templating:
+#  wallpaper:  The full path to the current wallpaper.
+#  backend:    Current **backend** being used.
+#  colorspace: Current **colorspace** being used.
+#  filter:     Current **filter** being used.
+#  alpha:      Default to 100, can be modified in the config file or with `--alpha`/`-a`.
+#  alpha_dec:  Instead of [0..=100], displays it from 0.00 to 1.00.
+#  var:        Output the color in `hex`.
+#  var.rgb:    Output the color in `rgb`.
+#  var.rgba:   Output the color in `rgba`.
+#  var.xrgba:  Output the color in `xrgb`.
+#  var.strip:  Output the color in `hex` (without a `#`).
+#  var.red:    Output the red value.
+#  var.green:  Output the green value.
+#  var.blue:   Output the blue value.
+#
+# Where `var` can be colors from `color0` to `color15`, `background`, `foreground` and `cursor`.

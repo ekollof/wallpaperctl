@@ -43,6 +43,7 @@ def main(argv: list[str] | None = None) -> int:
         "reload-wm",
         "cleanup",
         "verify",
+        "setup",
         "version",
         "help",
     }
@@ -350,6 +351,38 @@ def _subcommand_main(argv: list[str]) -> int:
         choices=["all", "icons", "cinnamon", "wal"],
         help="What to verify (default: all)",
     )
+    p_setup = sub.add_parser(
+        "setup",
+        help="Check/install dependencies and bootstrap config / wallust",
+    )
+    p_setup.add_argument(
+        "action",
+        nargs="?",
+        default="check",
+        choices=["check", "install", "wallust", "wallust-templates", "config", "all"],
+        help="check | install | wallust | wallust-templates | config | all",
+    )
+    p_setup.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Non-interactive: assume yes for installs",
+    )
+    p_setup.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing wallust.toml / ops.toml when bootstrapping",
+    )
+    p_setup.add_argument(
+        "--optional",
+        action="store_true",
+        help="Include optional packages (openrgb, mako, …) on install",
+    )
+    p_setup.add_argument(
+        "--all-desktops",
+        action="store_true",
+        help="On check: list deps for every DE, not only the active one",
+    )
     sub.add_parser("version", help="Print version")
 
     args = parser.parse_args(argv)
@@ -373,6 +406,7 @@ def _subcommand_main(argv: list[str]) -> int:
             print("Missing required:")
             for m in tools.missing_required:
                 print(f"  - {m}")
+            print("  → wallpaperctl setup check | wallpaperctl setup install")
         if tools.warnings:
             print("Warnings:")
             for w in tools.warnings:
@@ -380,6 +414,7 @@ def _subcommand_main(argv: list[str]) -> int:
         print("Tools present:")
         for k, v in sorted(tools.present.items()):
             print(f"  {k}: {v}")
+        print("(Full audit: wallpaperctl setup check)")
         return 0
     if args.cmd == "ops":
         print("Theme operations (in order):")
@@ -441,6 +476,16 @@ def _subcommand_main(argv: list[str]) -> int:
         from wallpaperctl.maint.verify import run_verify
 
         return run_verify(args.target, ops=ops)
+    if args.cmd == "setup":
+        from wallpaperctl.setup import run_setup
+
+        return run_setup(
+            args.action,
+            yes=args.yes,
+            force=args.force,
+            optional=args.optional,
+            all_desktops=args.all_desktops,
+        )
 
     lock = WallpaperLock()
 
