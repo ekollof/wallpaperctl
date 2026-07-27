@@ -372,7 +372,7 @@ def _subcommand_main(argv: list[str]) -> int:
     )
     p_manage = sub.add_parser(
         "manage",
-        help="Textual TUI: browse / preview / tag / delete / set wallpapers",
+        help="Textual TUI: browse / preview / multi-select / delete / set",
     )
     p_manage.add_argument(
         "directory",
@@ -384,6 +384,16 @@ def _subcommand_main(argv: list[str]) -> int:
         "--no-kitty",
         action="store_true",
         help="Disable Kitty graphics protocol (use sixel/chafa/blocks)",
+    )
+    p_manage.add_argument(
+        "--warm-cache",
+        action="store_true",
+        help="Pre-build Kitty PNG / sixel previews (then open the TUI)",
+    )
+    p_manage.add_argument(
+        "--warm-only",
+        action="store_true",
+        help="Only warm the preview cache, then exit (no TUI)",
     )
     p_setup = sub.add_parser(
         "setup",
@@ -535,7 +545,12 @@ def _subcommand_main(argv: list[str]) -> int:
     if args.cmd == "manage":
         from wallpaperctl.tui import run_manage_tui
 
-        return run_manage_tui(directory=args.directory, no_kitty=args.no_kitty)
+        return run_manage_tui(
+            directory=args.directory,
+            no_kitty=args.no_kitty,
+            warm_cache=args.warm_cache,
+            warm_only=args.warm_only,
+        )
 
     lock = WallpaperLock()
 

@@ -6,6 +6,7 @@ import hashlib
 import logging
 import threading
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -203,3 +204,86 @@ def get_preview_cache() -> PreviewCache:
         if _CACHE is None:
             _CACHE = PreviewCache()
         return _CACHE
+
+
+# Typical manage-TUI preview pane (after aspect fit); bucketed by get_* helpers.
+DEFAULT_WARM_PNG = (960, 640)
+DEFAULT_WARM_SIXEL = (48, 24)
+
+
+def warm_preview_cache(
+    paths: list[Path],
+    *,
+    cache: PreviewCache | None = None,
+    kitty: bool = True,
+    sixel: bool = True,
+    png_size: tuple[int, int] = DEFAULT_WARM_PNG,
+    sixel_cells: tuple[int, int] = DEFAULT_WARM_SIXEL,
+    progress: Callable[[int, int, Path], None] | None = None,
+    stop_event: threading.Event | None = None,
+) -> dict[str, int]:
+    """Pre-build disk/memory previews for *paths*.
+
+    Returns counts: ``ok_png``, ``ok_sixel``, ``fail``, ``stopped``.
+    """
+    cache = cache or get_preview_cache()
+    stats = {"ok_png": 0, "ok_sixel": 0, "fail": 0, "stopped": 0, "total": len(paths)}
+    max_w, max_h = png_size
+    scols, srows = sixel_cells
+
+    for i, path in enumerate(paths):
+        if stop_event is not None and stop_event.is_set():
+            stats["stopped"] = 1
+            break
+        if progress is not None:
+            try:
+                progress(i + 1, len(paths), path)
+            except Exception:
+                pass
+        if not path.is_file():
+            stats["fail"] += 1
+            continue
+        try:
+            if kitty:
+                if cache.get_png(path, max_w=max_w, max_h=max_h) is not None:
+                    stats["ok_png"] += 1
+                else:
+                    stats["fail"] += 1
+            if sixel:
+                # Only count success if sixel tools produced output
+                if cache.get_sixel(path, cols=scols, rows=srows) is not None:
+                    stats["ok_sixel"] += 1
+        except Exception as e:
+            log.debug("warm failed for %s: %s", path, e)
+            stats["fail"] += 1
+    return stats
+
+
+def start_background_warm(
+    paths: list[Path],
+    *,
+    kitty: bool = True,
+    sixel: bool = True,
+    on_progress: Callable[[int, int, Path], None] | None = None,
+    on_done: Callable[[dict[str, int]], None] | None = None,
+) -> tuple[threading.Thread, threading.Event]:
+    """Daemon thread that warms the cache; returns (thread, stop_event)."""
+    stop = threading.Event()
+
+    def _run() -> None:
+        stats = warm_preview_cache(
+            paths,
+            kitty=kitty,
+            sixel=sixel,
+            progress=on_progress,
+            stop_event=stop,
+        )
+        if on_done is not None and not stop.is_set():
+            try:
+                on_done(stats)
+            except Exception:
+                pass
+
+    t = threading.Thread(target=_run, name="wallpaperctl-preview-warm", daemon=True)
+    t.start()
+    return t, stop

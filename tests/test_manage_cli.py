@@ -23,4 +23,21 @@ def test_manage_subcommand() -> None:
     with patch("wallpaperctl.tui.run_manage_tui", return_value=0) as mock:
         code = main(["manage", "/tmp", "--no-kitty"])
     assert code == 0
-    mock.assert_called_once_with(directory="/tmp", no_kitty=True)
+    mock.assert_called_once_with(
+        directory="/tmp",
+        no_kitty=True,
+        warm_cache=False,
+        warm_only=False,
+    )
+
+
+def test_manage_warm_only() -> None:
+    with patch("wallpaperctl.tui.run_manage_tui", return_value=0) as mock:
+        code = main(["manage", "--warm-only"])
+    assert code == 0
+    mock.assert_called_once_with(
+        directory=None,
+        no_kitty=False,
+        warm_cache=False,
+        warm_only=True,
+    )

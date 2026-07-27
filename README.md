@@ -91,6 +91,8 @@ wallpaperctl setup all            # config + themes + check + install + wallust
 wallpaperctl migrate              # cutover checklist (PATH, config, tools)
 wallpaperctl manage [dir]         # Textual TUI manager (same as -m)
 wallpaperctl -m                   # shortcut for manage
+wallpaperctl manage --warm-cache  # pre-build Kitty/sixel previews, then open TUI
+wallpaperctl manage --warm-only   # only warm ~/.cache/wallpaperctl/previews
 ```
 
 ### Wallpaper manager TUI (`-m` / `manage`)
@@ -121,6 +123,10 @@ Interactive library browser built with [Textual](https://textual.textualize.io/)
 Protocol backends leave the preview pane blank in Textual’s cell buffer, then
 paint the image *after* each frame so escapes are not mangled as text.
 Optional: install `chafa` for sixel/ANSI quality.
+
+**Preview cache:** memory LRU + `~/.cache/wallpaperctl/previews/`. The TUI
+warms Kitty PNG / sixel payloads in a background thread on start. To fill the
+cache up front: `wallpaperctl manage --warm-only`.
 
 
 Shipped data under `src/wallpaperctl/data/`:

@@ -205,6 +205,7 @@ class ManageApp(App[None]):
         self._selected: WallpaperItem | None = None
         # Multi-select: resolved path strings
         self._marked: set[str] = set()
+        self._warm_stop: object | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -228,6 +229,57 @@ class ManageApp(App[None]):
             f"Library: {self.library_root}  ·  preview: {backend}  ·  "
             f"space/t mark · d deletes selection"
         )
+        self._start_cache_warm()
+
+    def on_unmount(self) -> None:
+        stop = self._warm_stop
+        if stop is not None and hasattr(stop, "set"):
+            stop.set()  # type: ignore[union-attr]
+
+    def _start_cache_warm(self) -> None:
+        """Background-fill Kitty PNG / sixel disk cache for the library."""
+        from wallpaperctl.term_graphics import GraphicsBackend, detect_backend, have_cmd
+        from wallpaperctl.tui.preview_cache import start_background_warm
+
+        info = detect_backend(no_kitty=self.no_kitty)
+        if info.backend == GraphicsBackend.KITTY:
+            warm_kitty, warm_sixel = True, False
+        elif info.backend == GraphicsBackend.SIXEL:
+            warm_kitty, warm_sixel = False, True
+        else:
+            # Optional: still warm sixel if tools exist for later sessions
+            if have_cmd("chafa") or have_cmd("img2sixel"):
+                warm_kitty, warm_sixel = False, True
+            else:
+                return
+
+        paths = [it.path for it in self._all]
+        if not paths:
+            return
+
+        def on_progress(i: int, n: int, path: Path) -> None:
+            if i == 1 or i == n or i % 25 == 0:
+                self.call_from_thread(
+                    self._status,
+                    f"Warming preview cache {i}/{n}: {path.name}",
+                )
+
+        def on_done(stats: dict) -> None:
+            self.call_from_thread(
+                self._status,
+                f"Preview cache warm: png={stats.get('ok_png', 0)} "
+                f"sixel={stats.get('ok_sixel', 0)} "
+                f"fail={stats.get('fail', 0)}  ·  ready",
+            )
+
+        _thread, stop = start_background_warm(
+            paths,
+            kitty=warm_kitty,
+            sixel=warm_sixel,
+            on_progress=on_progress,
+            on_done=on_done,
+        )
+        self._warm_stop = stop
 
     def post_display_hook(self) -> None:
         """Paint Kitty/sixel *after* Textual draws the frame (inline graphics)."""
