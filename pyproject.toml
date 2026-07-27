@@ -30,12 +30,15 @@ dependencies = [
   "Pillow>=10.0",
   "imagehash>=4.3",
   "jeepney>=0.8",
+  "textual>=0.80",
 ]
 
 
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.6"]
+# Alias kept for docs; textual is a core dependency for `manage` / `-m`.
+tui = ["textual>=0.80"]
 
 [project.scripts]
 wallpaperctl = "wallpaperctl.cli:main"

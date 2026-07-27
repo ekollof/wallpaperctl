@@ -48,11 +48,12 @@ Entry points: `wallpaperctl` and `wallpaper` (compat alias).
 ## CLI (shell-compatible)
 
 ```text
-wallpaperctl [-r] [-R] [-C] [-c categories] [<path_to_wallpaper>]
+wallpaperctl [-r] [-R] [-C] [-m] [-c categories] [<path_to_wallpaper>]
 
   -r  Fetch a random wallpaper (Unsplash / Pexels / Pixabay, ~1920x1080)
   -R  Reload the current wallpaper from ~/.wallpaper
   -C  Clear URL + perceptual-hash caches
+  -m  Open wallpaper manager TUI (preview / tag / delete / set)
   -c  Categories (comma-separated), e.g. space,galaxy
   (no args)  Pick a random file from ~/Wallpapers
   <path>     Set a specific image
@@ -88,7 +89,36 @@ wallpaperctl setup themes         # install FlatColor / FlatColor-dark GTK theme
 wallpaperctl setup config         # create dirs + sample ops.toml / config.sh
 wallpaperctl setup all            # config + themes + check + install + wallust
 wallpaperctl migrate              # cutover checklist (PATH, config, tools)
+wallpaperctl manage [dir]         # Textual TUI manager (same as -m)
+wallpaperctl -m                   # shortcut for manage
 ```
+
+### Wallpaper manager TUI (`-m` / `manage`)
+
+Interactive library browser built with [Textual](https://textual.textualize.io/):
+
+| Key | Action |
+|-----|--------|
+| `/` | Focus search (name + tags) |
+| `s` / Enter | Set wallpaper + run theme ops |
+| `t` | Add tag |
+| `u` | Remove tag |
+| `d` | Delete file (confirm) |
+| `f` | Filter by tag |
+| `c` | Clear search/tag filters |
+| `r` | Rescan library |
+| `q` | Quit |
+
+**Preview backends** (auto-detected, best first):
+
+1. **Kitty graphics protocol** (Kitty, Ghostty, WezTerm, …)
+2. **Sixel** via `chafa --format=sixels` or `img2sixel`
+3. **Chafa** symbol/ANSI art
+4. **Unicode half-blocks** via Pillow (always available)
+
+Tags are stored in `~/.config/wallpaperctl/tags.json` (not in the image files).
+Optional: install `chafa` for higher-quality terminal previews.
+
 
 Shipped data under `src/wallpaperctl/data/`:
 

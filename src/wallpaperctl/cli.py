@@ -45,13 +45,14 @@ def main(argv: list[str] | None = None) -> int:
         "verify",
         "setup",
         "migrate",
+        "manage",
         "version",
         "help",
     }
     if argv and not argv[0].startswith("-") and argv[0] in subcommands:
         return _subcommand_main(argv)
 
-    # Classic getopt-style: -r -R -C -c categories [path]
+    # Classic getopt-style: -r -R -C -c -m categories [path]
     return _classic_main(argv)
 
 
@@ -75,6 +76,11 @@ def _classic_main(argv: list[str]) -> int:
         "-C",
         action="store_true",
         help="Clear wallpaper cache (URLs + perceptual hashes)",
+    )
+    parser.add_argument(
+        "-m",
+        action="store_true",
+        help="Open Textual wallpaper manager TUI (same as: manage)",
     )
     parser.add_argument(
         "-c",
@@ -109,6 +115,10 @@ def _classic_main(argv: list[str]) -> int:
             print("No cache files found to clear.")
         return 0
 
+    if args.m:
+        from wallpaperctl.tui import run_manage_tui
+
+        return run_manage_tui()
 
     lock = WallpaperLock()
     lock.acquire()
@@ -360,6 +370,21 @@ def _subcommand_main(argv: list[str]) -> int:
         "migrate",
         help="Read-only cutover checklist (shell scripts → wallpaperctl)",
     )
+    p_manage = sub.add_parser(
+        "manage",
+        help="Textual TUI: browse / preview / tag / delete / set wallpapers",
+    )
+    p_manage.add_argument(
+        "directory",
+        nargs="?",
+        default=None,
+        help="Library directory (default: ~/Wallpapers)",
+    )
+    p_manage.add_argument(
+        "--no-kitty",
+        action="store_true",
+        help="Disable Kitty graphics protocol (use sixel/chafa/blocks)",
+    )
     p_setup = sub.add_parser(
         "setup",
         help="Check/install dependencies and bootstrap config / wallust",
@@ -507,6 +532,10 @@ def _subcommand_main(argv: list[str]) -> int:
         from wallpaperctl.maint.migrate import run_migrate_check
 
         return run_migrate_check(ops)
+    if args.cmd == "manage":
+        from wallpaperctl.tui import run_manage_tui
+
+        return run_manage_tui(directory=args.directory, no_kitty=args.no_kitty)
 
     lock = WallpaperLock()
 
