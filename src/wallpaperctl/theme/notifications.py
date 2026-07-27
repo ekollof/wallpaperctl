@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 
 from wallpaperctl.context import WallpaperContext
-
 from wallpaperctl.theme.base import debug_op
 from wallpaperctl.util import have, home, pgrep_exact, run
 
@@ -42,8 +41,7 @@ class NotificationsOp:
                 return True
         run(["pkill", "dunst"], timeout=5)
         time.sleep(0.5)
-        run(["dunst"], timeout=5, capture=True)
-        # start detached
+        # Start detached only (do not also run dunst in the foreground)
         import subprocess
 
         subprocess.Popen(
