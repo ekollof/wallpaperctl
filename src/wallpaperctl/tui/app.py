@@ -311,9 +311,11 @@ class ManageApp(App[None]):
 
     @on(ListView.Selected, "#wall-list")
     def on_selected(self, event: ListView.Selected) -> None:
+        # Click / activate only selects (preview); set via `s` or Enter binding.
         if isinstance(event.item, WallpaperListItem):
             self._selected = event.item.item
-            self.action_set_wallpaper()
+            self.query_one("#meta", MetaPane).show_item(event.item.item)
+            self.query_one("#preview", PreviewPane).path = event.item.item.path
 
     @on(Input.Changed, "#search")
     def on_search(self, event: Input.Changed) -> None:
