@@ -12,14 +12,17 @@ from wallpaperctl.term_graphics import (
     GraphicsBackend,
     cursor_seq,
     detect_backend,
+    fit_cells,
+    image_pixel_size,
     is_protocol_backend,
     kitty_delete_seq,
     kitty_place_png_seq,
     kitty_put_seq,
-    load_png_bytes,
+    load_png_with_size,
     render_chafa_ansi,
     render_halfblocks,
     render_sixel,
+    terminal_cell_pixels,
 )
 
 
@@ -72,10 +75,14 @@ class PreviewPane(Widget):
         self._title = ""
         # Protocol cache
         self._png: bytes | None = None
+        self._img_w = 0
+        self._img_h = 0
         self._sixel: str | None = None
         self._tx_path: Path | None = None  # path last transmitted to kitty
         self._tx_cols = 0
         self._tx_rows = 0
+        self._place_cols = 0  # aspect-correct placement size
+        self._place_rows = 0
         self._kitty_loaded = False
 
     def watch_path(self, path: Path | None) -> None:
@@ -106,8 +113,12 @@ class PreviewPane(Widget):
     def _prepare(self, path: Path | None) -> None:
         self._ansi = None
         self._png = None
+        self._img_w = 0
+        self._img_h = 0
         self._sixel = None
         self._title = ""
+        self._place_cols = 0
+        self._place_rows = 0
         if self.backend == GraphicsBackend.KITTY:
             self._kitty_loaded = False
             self._tx_path = None
@@ -118,28 +129,38 @@ class PreviewPane(Widget):
 
         cols, rows = self._cell_size()
         self._title = f"{path.name}  ·  {self.backend_label}"
+        iw, ih = image_pixel_size(path)
+        self._img_w, self._img_h = iw, ih
+        place_c, place_r = fit_cells(iw, ih, cols, rows)
+        self._place_cols, self._place_rows = place_c, place_r
 
         if self.use_protocol and self.backend == GraphicsBackend.KITTY:
-            # Pixel budget roughly matches cell box
-            max_w = max(200, cols * 12)
-            max_h = max(120, rows * 24)
-            self._png = load_png_bytes(path, max_w=max_w, max_h=max_h)
+            cell_w, cell_h = terminal_cell_pixels()
+            max_w = max(200, place_c * cell_w * 2)
+            max_h = max(120, place_r * cell_h * 2)
+            loaded = load_png_with_size(path, max_w=max_w, max_h=max_h)
+            if loaded is None:
+                self._load_ansi(path, place_c, place_r)
+                return
+            self._png, self._img_w, self._img_h = loaded
+            # Re-fit using thumbnail pixel size (same aspect)
+            self._place_cols, self._place_rows = fit_cells(
+                self._img_w, self._img_h, cols, rows
+            )
             self._tx_cols = cols
             self._tx_rows = rows
-            if self._png is None:
-                # Fall back to ANSI for this file
-                self._load_ansi(path, cols, rows)
             return
 
         if self.use_protocol and self.backend == GraphicsBackend.SIXEL:
-            self._sixel = render_sixel(path, cols=cols, rows=rows)
+            # chafa --size fits *inside* the box preserving aspect
+            self._sixel = render_sixel(path, cols=place_c, rows=place_r)
             self._tx_cols = cols
             self._tx_rows = rows
             if self._sixel is None:
-                self._load_ansi(path, cols, rows)
+                self._load_ansi(path, place_c, place_r)
             return
 
-        self._load_ansi(path, cols, rows)
+        self._load_ansi(path, place_c, place_r)
 
     def _load_ansi(self, path: Path, cols: int, rows: int) -> None:
         ansi = render_chafa_ansi(path, cols=cols, rows=rows)
@@ -189,43 +210,64 @@ class PreviewPane(Widget):
         # 1-based terminal coords; skip title line inside content
         row = region.y + 2  # +1 for 1-based, +1 for title line
         col = region.x + 1
-        cols = max(8, region.width)
-        rows = max(4, region.height - 1)
+        avail_cols = max(8, region.width)
+        avail_rows = max(4, region.height - 1)
+
+        # Aspect-correct placement (never force full pane c×r — that stretches)
+        iw, ih = self._img_w, self._img_h
+        if iw <= 0 or ih <= 0:
+            iw, ih = image_pixel_size(path)
+        place_c, place_r = fit_cells(iw, ih, avail_cols, avail_rows)
 
         try:
             if self.backend == GraphicsBackend.KITTY and self._png is not None:
                 write(cursor_seq(row, col))
-                if (
+                need_tx = (
                     not self._kitty_loaded
                     or self._tx_path != path
-                    or self._tx_cols != cols
-                    or self._tx_rows != rows
-                ):
-                    # (Re)transmit when path or cell box changes
+                    or abs(self._tx_cols - avail_cols) > 1
+                    or abs(self._tx_rows - avail_rows) > 1
+                    or self._place_cols != place_c
+                    or self._place_rows != place_r
+                )
+                if need_tx:
                     write(kitty_delete_seq())
                     write(cursor_seq(row, col))
-                    # z=0: draw above Textual cell glyphs so the image is visible
                     write(
                         kitty_place_png_seq(
                             self._png,
-                            cols=cols,
-                            rows=rows,
+                            cols=place_c,
+                            rows=place_r,
                             z_index=0,
                         )
                     )
                     self._kitty_loaded = True
                     self._tx_path = path
-                    self._tx_cols = cols
-                    self._tx_rows = rows
+                    self._tx_cols = avail_cols
+                    self._tx_rows = avail_rows
+                    self._place_cols = place_c
+                    self._place_rows = place_r
                 else:
-                    # Cheap re-place after Textual redraw
-                    write(kitty_put_seq(cols=cols, rows=rows, z_index=0))
-            elif self.backend == GraphicsBackend.SIXEL and self._sixel is not None:
-                # Re-encode if size changed substantially
-                if abs(cols - self._tx_cols) > 2 or abs(rows - self._tx_rows) > 2:
-                    self._sixel = render_sixel(path, cols=cols, rows=rows)
-                    self._tx_cols = cols
-                    self._tx_rows = rows
+                    write(
+                        kitty_put_seq(
+                            cols=self._place_cols,
+                            rows=self._place_rows,
+                            z_index=0,
+                        )
+                    )
+            elif self.backend == GraphicsBackend.SIXEL:
+                if (
+                    self._sixel is None
+                    or abs(avail_cols - self._tx_cols) > 2
+                    or abs(avail_rows - self._tx_rows) > 2
+                    or self._place_cols != place_c
+                    or self._place_rows != place_r
+                ):
+                    self._sixel = render_sixel(path, cols=place_c, rows=place_r)
+                    self._tx_cols = avail_cols
+                    self._tx_rows = avail_rows
+                    self._place_cols = place_c
+                    self._place_rows = place_r
                 if self._sixel:
                     write(cursor_seq(row, col))
                     write(self._sixel)

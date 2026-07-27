@@ -184,18 +184,100 @@ def detect_backend(
 
 def load_png_bytes(path: Path, *, max_w: int = 800, max_h: int = 500) -> bytes | None:
     """Load image, thumbnail, encode PNG for graphics protocols."""
+    result = load_png_with_size(path, max_w=max_w, max_h=max_h)
+    return result[0] if result else None
+
+
+def load_png_with_size(
+    path: Path, *, max_w: int = 800, max_h: int = 500
+) -> tuple[bytes, int, int] | None:
+    """Load/thumbnail image → (png_bytes, pixel_width, pixel_height)."""
     try:
         from PIL import Image
 
         with Image.open(path) as img:
             img = img.convert("RGB")
             img.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
+            w, h = img.size
             buf = io.BytesIO()
             img.save(buf, format="PNG", optimize=True, compress_level=6)
-            return buf.getvalue()
+            return buf.getvalue(), w, h
     except Exception as e:
-        log.debug("load_png_bytes failed for %s: %s", path, e)
+        log.debug("load_png_with_size failed for %s: %s", path, e)
         return None
+
+
+def image_pixel_size(path: Path) -> tuple[int, int]:
+    """Return (width, height) of an image file, or (0, 0)."""
+    try:
+        from PIL import Image
+
+        with Image.open(path) as img:
+            return img.size
+    except Exception:
+        return 0, 0
+
+
+def terminal_cell_pixels() -> tuple[int, int]:
+    """Approximate character cell size in pixels (width, height).
+
+    Uses TIOCGWINSZ when available; falls back to a typical 1:2 cell.
+    """
+    try:
+        import array
+        import fcntl
+        import termios
+
+        buf = array.array("H", [0, 0, 0, 0])
+        fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, buf)
+        rows, cols, xpixel, ypixel = int(buf[0]), int(buf[1]), int(buf[2]), int(buf[3])
+        if rows > 0 and cols > 0 and xpixel > 0 and ypixel > 0:
+            return max(1, xpixel // cols), max(1, ypixel // rows)
+    except Exception:
+        pass
+    # Common monospace cell ≈ half as wide as tall
+    return 10, 20
+
+
+def fit_cells(
+    img_w: int,
+    img_h: int,
+    max_cols: int,
+    max_rows: int,
+    *,
+    cell_w: int = 0,
+    cell_h: int = 0,
+) -> tuple[int, int]:
+    """Largest cell box (cols, rows) that fits *img* in *max_* without stretch.
+
+    Kitty/sixel ``c``×``r`` placement maps to ``c*cell_w`` by ``r*cell_h``
+    pixels; we choose c,r so that ratio matches the image.
+    """
+    max_cols = max(1, int(max_cols))
+    max_rows = max(1, int(max_rows))
+    if img_w <= 0 or img_h <= 0:
+        return max_cols, max_rows
+
+    if cell_w <= 0 or cell_h <= 0:
+        cell_w, cell_h = terminal_cell_pixels()
+
+    # Displayed pixel size if we used the full pane:
+    #   pane_px_w = max_cols * cell_w
+    #   pane_px_h = max_rows * cell_h
+    # Fit image into that pixel box (contain), then convert back to cells.
+    pane_w = max_cols * cell_w
+    pane_h = max_rows * cell_h
+    scale = min(pane_w / img_w, pane_h / img_h)
+    disp_w = max(1.0, img_w * scale)
+    disp_h = max(1.0, img_h * scale)
+    cols = max(1, min(max_cols, int(round(disp_w / cell_w))))
+    rows = max(1, min(max_rows, int(round(disp_h / cell_h))))
+    # Avoid 0-area from rounding
+    if cols < 1:
+        cols = 1
+    if rows < 1:
+        rows = 1
+    return cols, rows
 
 
 def is_protocol_backend(backend: GraphicsBackend) -> bool:

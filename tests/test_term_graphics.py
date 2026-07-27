@@ -40,3 +40,25 @@ def test_render_ansi_preview_blocks(tmp_path: Path) -> None:
     )
     assert backend == GraphicsBackend.BLOCKS
     assert len(text) > 10
+
+
+def test_fit_cells_preserves_wide_aspect() -> None:
+    from wallpaperctl.term_graphics import fit_cells
+
+    # 16:9 image in a square-ish pane with square cells → width-limited
+    cols, rows = fit_cells(1920, 1080, max_cols=40, max_rows=40, cell_w=10, cell_h=10)
+    assert cols <= 40 and rows <= 40
+    # width/height in cells ≈ 16/9
+    ratio = cols / rows
+    assert 1.5 < ratio < 2.0
+    # Must not use full 40×40 (that would stretch)
+    assert not (cols == 40 and rows == 40)
+
+
+def test_fit_cells_preserves_tall_aspect() -> None:
+    from wallpaperctl.term_graphics import fit_cells
+
+    cols, rows = fit_cells(100, 200, max_cols=40, max_rows=20, cell_w=10, cell_h=20)
+    assert cols <= 40 and rows <= 20
+    # Image aspect 0.5; cell aspect 0.5 → roughly square in cells
+    assert rows >= cols
