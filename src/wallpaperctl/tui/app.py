@@ -8,7 +8,6 @@ from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
@@ -22,17 +21,8 @@ from textual.widgets import (
 )
 
 from wallpaperctl.config import OpsConfig
-from wallpaperctl.term_graphics import (
-    GraphicsBackend,
-    detect_backend,
-    kitty_delete,
-    kitty_place_png,
-    load_png_bytes,
-    move_cursor,
-    render_ansi_preview,
-    render_sixel,
-)
 from wallpaperctl.tui.library import WallpaperItem, filter_items, scan_library
+from wallpaperctl.tui.preview import PreviewPane
 from wallpaperctl.tui.tags import TagStore
 
 
@@ -145,102 +135,6 @@ class WallpaperListItem(ListItem):
         label = f"{item.rel}{tag_s}"
         super().__init__(Label(label))
         self.item = item
-
-
-class PreviewPane(Static):
-    """Preview area: ANSI/chafa/blocks in-widget; Kitty/sixel via protocol paint."""
-
-    DEFAULT_CSS = """
-    PreviewPane {
-        width: 1fr;
-        height: 1fr;
-        border: solid $primary;
-        padding: 0 1;
-        overflow-y: auto;
-        content-align: center middle;
-    }
-    """
-
-    path: reactive[Path | None] = reactive(None)
-    backend_label: reactive[str] = reactive("")
-
-    def __init__(self, *, no_kitty: bool = False, **kwargs) -> None:
-        super().__init__(**kwargs)
-        self.no_kitty = no_kitty
-        info = detect_backend(no_kitty=no_kitty)
-        self.backend = info.backend
-        if info.detail:
-            self.backend_label = f"{info.backend.value} ({info.detail})"
-        else:
-            self.backend_label = info.backend.value
-        self._last_path: Path | None = None
-
-    def watch_path(self, path: Path | None) -> None:
-        self._update_preview(path)
-
-    def on_unmount(self) -> None:
-        if self.backend == GraphicsBackend.KITTY:
-            kitty_delete()
-
-    def _cell_size(self) -> tuple[int, int]:
-        region = self.content_region
-        cols = max(20, region.width - 2)
-        rows = max(8, region.height - 2)
-        return cols, rows
-
-    def _update_preview(self, path: Path | None) -> None:
-        if self.backend == GraphicsBackend.KITTY:
-            kitty_delete()
-        if path is None or not path.is_file():
-            self.update("[dim]No selection[/dim]")
-            self._last_path = None
-            return
-
-        cols, rows = self._cell_size()
-        backend, text = render_ansi_preview(
-            path, cols=cols, rows=rows, backend=self.backend
-        )
-        header = f"[bold]{path.name}[/bold]  [dim]via {self.backend_label}[/dim]\n"
-        self.update(header + text)
-        self._last_path = path
-
-        # Optional protocol overlay for true graphics
-        if self.backend == GraphicsBackend.KITTY and not self.no_kitty:
-            self.call_after_refresh(self._paint_kitty, path, cols, rows)
-        elif self.backend == GraphicsBackend.SIXEL:
-            self.call_after_refresh(self._paint_sixel, path, cols, rows)
-
-    def _paint_kitty(self, path: Path, cols: int, rows: int) -> None:
-        if self._last_path != path:
-            return
-        png = load_png_bytes(path, max_w=min(1200, cols * 16), max_h=min(800, rows * 32))
-        if not png:
-            return
-        region = self.content_region
-        # content_region is screen-relative in cells (Textual 0.x)
-        row = region.y + 2  # below header line inside pane
-        col = region.x + 1
-        try:
-            move_cursor(row + 1, col + 1)
-            kitty_place_png(png, cols=max(10, cols - 2), rows=max(4, rows - 2))
-        except Exception:
-            pass
-
-    def _paint_sixel(self, path: Path, cols: int, rows: int) -> None:
-        if self._last_path != path:
-            return
-        sixel = render_sixel(path, cols=cols, rows=rows)
-        if not sixel:
-            return
-        region = self.content_region
-        try:
-            move_cursor(region.y + 2, region.x + 1)
-            import sys
-
-            sys.stdout.write(sixel)
-            sys.stdout.flush()
-        except Exception:
-            pass
 
 
 class MetaPane(Static):
@@ -357,6 +251,17 @@ class ManageApp(App[None]):
         self.query_one("#wall-list", ListView).focus()
         backend = self.query_one("#preview", PreviewPane).backend_label
         self._status(f"Library: {self.library_root}  ·  preview: {backend}")
+
+    def post_display_hook(self) -> None:
+        """Paint Kitty/sixel *after* Textual draws the frame (inline graphics)."""
+        try:
+            pane = self.query_one("#preview", PreviewPane)
+        except Exception:
+            return
+        driver = self._driver
+        if driver is None:
+            return
+        pane.emit_protocol(driver.write)
 
     def _status(self, msg: str) -> None:
         self.query_one("#status", Static).update(msg)

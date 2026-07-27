@@ -111,13 +111,17 @@ Interactive library browser built with [Textual](https://textual.textualize.io/)
 
 **Preview backends** (auto-detected, best first):
 
-1. **Kitty graphics protocol** (Kitty, Ghostty, WezTerm, …)
-2. **Sixel** via `chafa --format=sixels` or `img2sixel`
-3. **Chafa** symbol/ANSI art
+1. **Kitty graphics protocol** — true inline image via Textual’s post-frame hook  
+   (Kitty, Ghostty, WezTerm, …)
+2. **Sixel** — same post-frame path via `chafa --format=sixels` or `img2sixel`
+3. **Chafa** symbol/ANSI art (rendered with Rich `Text.from_ansi`)
 4. **Unicode half-blocks** via Pillow (always available)
 
+Protocol backends leave the preview pane blank in Textual’s cell buffer, then
+paint the image *after* each frame so escapes are not mangled as text.
+
 Tags are stored in `~/.config/wallpaperctl/tags.json` (not in the image files).
-Optional: install `chafa` for higher-quality terminal previews.
+Optional: install `chafa` for sixel/ANSI quality.
 
 
 Shipped data under `src/wallpaperctl/data/`:

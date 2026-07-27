@@ -198,6 +198,65 @@ def load_png_bytes(path: Path, *, max_w: int = 800, max_h: int = 500) -> bytes |
         return None
 
 
+def is_protocol_backend(backend: GraphicsBackend) -> bool:
+    """True if the backend paints outside the Textual cell buffer."""
+    return backend in (GraphicsBackend.KITTY, GraphicsBackend.SIXEL)
+
+
+def cursor_seq(row: int, col: int) -> str:
+    """1-based cursor position escape sequence."""
+    return f"\033[{max(1, int(row))};{max(1, int(col))}H"
+
+
+def kitty_delete_seq(image_id: int = KITTY_TUI_IMAGE_ID) -> str:
+    """Delete a previously placed Kitty image (sequence only)."""
+    return f"\033_Ga=d,d=i,i={image_id},q=2\033\\"
+
+
+def kitty_place_png_seq(
+    png: bytes,
+    *,
+    cols: int = 0,
+    rows: int = 0,
+    image_id: int = KITTY_TUI_IMAGE_ID,
+    z_index: int = -1,
+) -> str:
+    """Transmit + place PNG at cursor (Kitty a=T). Returns escape string."""
+    encoded = base64.b64encode(png).decode("ascii")
+    parts: list[str] = []
+    first = True
+    while encoded:
+        chunk, encoded = encoded[:4096], encoded[4096:]
+        m = 1 if encoded else 0
+        if first:
+            ctrl = f"a=T,f=100,i={image_id},q=2,m={m},z={z_index}"
+            if cols > 0:
+                ctrl += f",c={int(cols)}"
+            if rows > 0:
+                ctrl += f",r={int(rows)}"
+            parts.append(f"\033_G{ctrl};{chunk}\033\\")
+            first = False
+        else:
+            parts.append(f"\033_Gq=2,i={image_id},m={m};{chunk}\033\\")
+    return "".join(parts)
+
+
+def kitty_put_seq(
+    *,
+    cols: int = 0,
+    rows: int = 0,
+    image_id: int = KITTY_TUI_IMAGE_ID,
+    z_index: int = -1,
+) -> str:
+    """Re-place an already-transmitted Kitty image at the cursor (a=p)."""
+    ctrl = f"a=p,i={image_id},q=2,z={z_index}"
+    if cols > 0:
+        ctrl += f",c={int(cols)}"
+    if rows > 0:
+        ctrl += f",r={int(rows)}"
+    return f"\033_G{ctrl}\033\\"
+
+
 def kitty_place_png(
     png: bytes,
     *,
@@ -206,29 +265,19 @@ def kitty_place_png(
     image_id: int = KITTY_TUI_IMAGE_ID,
     z_index: int = -1,
 ) -> None:
-    """Transmit + place PNG at cursor (Kitty protocol, quiet)."""
-    encoded = base64.b64encode(png).decode("ascii")
-    first = True
-    while encoded:
-        chunk, encoded = encoded[:4096], encoded[4096:]
-        m = 1 if encoded else 0
-        if first:
-            ctrl = f"a=T,f=100,i={image_id},q=2,m={m},z={z_index}"
-            if cols > 0:
-                ctrl += f",c={cols}"
-            if rows > 0:
-                ctrl += f",r={rows}"
-            sys.stdout.write(f"\033_G{ctrl};{chunk}\033\\")
-            first = False
-        else:
-            sys.stdout.write(f"\033_Gq=2,i={image_id},m={m};{chunk}\033\\")
-        sys.stdout.flush()
+    """Transmit + place PNG at cursor (Kitty protocol, quiet) via stdout."""
+    sys.stdout.write(
+        kitty_place_png_seq(
+            png, cols=cols, rows=rows, image_id=image_id, z_index=z_index
+        )
+    )
+    sys.stdout.flush()
 
 
 def kitty_delete(image_id: int = KITTY_TUI_IMAGE_ID) -> None:
     """Delete a previously placed Kitty image."""
     try:
-        sys.stdout.write(f"\033_Ga=d,d=i,i={image_id},q=2\033\\")
+        sys.stdout.write(kitty_delete_seq(image_id))
         sys.stdout.flush()
     except Exception:
         pass
@@ -236,7 +285,7 @@ def kitty_delete(image_id: int = KITTY_TUI_IMAGE_ID) -> None:
 
 def move_cursor(row: int, col: int) -> None:
     """1-based cursor position."""
-    sys.stdout.write(f"\033[{max(1, row)};{max(1, col)}H")
+    sys.stdout.write(cursor_seq(row, col))
     sys.stdout.flush()
 
 
