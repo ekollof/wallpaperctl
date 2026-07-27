@@ -261,7 +261,23 @@ class ManageApp(App[None]):
         driver = self._driver
         if driver is None:
             return
+        # Modals (delete confirm, tag prompt) sit in the cell buffer; Kitty/sixel
+        # are drawn on top afterward and would cover them unless we clear first.
+        if self._modal_open():
+            pane.clear_protocol(driver.write)
+            return
         pane.emit_protocol(driver.write)
+
+    def _modal_open(self) -> bool:
+        """True when a ModalScreen is above the main manage screen."""
+        try:
+            # Base screen + any pushed overlays
+            if len(self.screen_stack) > 1:
+                return True
+            # Current screen itself may be a modal during transition
+            return isinstance(self.screen, ModalScreen)
+        except Exception:
+            return False
 
     def _status(self, msg: str) -> None:
         self.query_one("#status", Static).update(msg)

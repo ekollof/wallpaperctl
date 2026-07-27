@@ -188,6 +188,17 @@ class PreviewPane(Widget):
             return Text("No selection", style="dim")
         return Text("(no preview)", style="dim")
 
+    def clear_protocol(self, write) -> None:
+        """Remove Kitty image so modals/UI are not covered (sixel is ephemeral)."""
+        if self.backend != GraphicsBackend.KITTY:
+            return
+        try:
+            write(kitty_delete_seq())
+        except Exception:
+            pass
+        # Force full retransmit when the modal closes
+        self._kitty_loaded = False
+
     def emit_protocol(self, write) -> None:
         """Paint Kitty/sixel after Textual's frame. *write* is driver.write."""
         if not self.use_protocol:
