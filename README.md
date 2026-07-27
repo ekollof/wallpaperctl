@@ -95,17 +95,18 @@ wallpaperctl -m                   # shortcut for manage
 
 ### Wallpaper manager TUI (`-m` / `manage`)
 
-Interactive library browser built with [Textual](https://textual.textualize.io/):
+Interactive library browser built with [Textual](https://textual.textualize.io/).
+**Mark** (multi-select) is for batch ops — not search labels.
 
 | Key | Action |
 |-----|--------|
-| `/` | Focus search (name + tags) |
-| `s` / Enter | Set wallpaper + run theme ops |
-| `t` | Add tag |
-| `u` | Remove tag |
-| `d` | Delete file (confirm) |
-| `f` | Filter by tag |
-| `c` | Clear search/tag filters |
+| `/` | Search by filename |
+| `space` / `t` | Toggle mark on focused row |
+| `a` | Mark all visible rows |
+| `u` | Unmark focused row |
+| `c` | Clear all marks |
+| `d` | Delete marked set (or focused row if none marked) |
+| `s` / Enter | Set **focused** wallpaper + theme ops |
 | `r` | Rescan library |
 | `q` | Quit |
 
@@ -119,8 +120,6 @@ Interactive library browser built with [Textual](https://textual.textualize.io/)
 
 Protocol backends leave the preview pane blank in Textual’s cell buffer, then
 paint the image *after* each frame so escapes are not mangled as text.
-
-Tags are stored in `~/.config/wallpaperctl/tags.json` (not in the image files).
 Optional: install `chafa` for sixel/ANSI quality.
 
 

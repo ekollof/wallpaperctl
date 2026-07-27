@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from wallpaperctl.sources.local import list_wallpaper_files
-from wallpaperctl.tui.tags import TagStore
 
 
 @dataclass
@@ -18,7 +17,6 @@ class WallpaperItem:
     mtime: float = 0.0
     width: int = 0
     height: int = 0
-    tags: list[str] = field(default_factory=list)
 
     @property
     def name(self) -> str:
@@ -48,11 +46,11 @@ class WallpaperItem:
 
 def scan_library(
     root: Path,
-    tags: TagStore | None = None,
+    tags: object | None = None,  # unused; kept for call-site compatibility
     *,
     with_dimensions: bool = False,
 ) -> list[WallpaperItem]:
-    """List wallpapers under *root* with optional tags/dimensions."""
+    """List wallpapers under *root* with optional dimensions."""
     root = root.expanduser().resolve()
     files = list_wallpaper_files(root)
     items: list[WallpaperItem] = []
@@ -69,7 +67,6 @@ def scan_library(
         w = h = 0
         if with_dimensions:
             w, h = _image_size(p)
-        item_tags = tags.get(p) if tags else []
         items.append(
             WallpaperItem(
                 path=p,
@@ -78,7 +75,6 @@ def scan_library(
                 mtime=mtime,
                 width=w,
                 height=h,
-                tags=item_tags,
             )
         )
     items.sort(key=lambda i: i.mtime, reverse=True)
@@ -99,17 +95,9 @@ def filter_items(
     items: list[WallpaperItem],
     *,
     query: str = "",
-    tag: str = "",
+    tag: str = "",  # unused (legacy); multi-select is in-memory marks
 ) -> list[WallpaperItem]:
     q = query.strip().lower()
-    t = tag.strip().lower()
-    out: list[WallpaperItem] = []
-    for it in items:
-        if t and t not in {x.lower() for x in it.tags}:
-            continue
-        if q:
-            hay = f"{it.rel} {' '.join(it.tags)}".lower()
-            if q not in hay:
-                continue
-        out.append(it)
-    return out
+    if not q:
+        return list(items)
+    return [it for it in items if q in it.rel.lower()]

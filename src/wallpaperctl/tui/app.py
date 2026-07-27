@@ -1,4 +1,4 @@
-"""Textual TUI: browse, preview, tag, delete, set wallpapers."""
+"""Textual TUI: browse, multi-select, delete, set wallpapers."""
 
 from __future__ import annotations
 
@@ -23,7 +23,6 @@ from textual.widgets import (
 from wallpaperctl.config import OpsConfig
 from wallpaperctl.tui.library import WallpaperItem, filter_items, scan_library
 from wallpaperctl.tui.preview import PreviewPane
-from wallpaperctl.tui.tags import TagStore
 
 
 class ConfirmScreen(ModalScreen[bool]):
@@ -34,7 +33,7 @@ class ConfirmScreen(ModalScreen[bool]):
         align: center middle;
     }
     #confirm-box {
-        width: 60;
+        width: 64;
         height: auto;
         border: thick $error;
         background: $surface;
@@ -53,15 +52,16 @@ class ConfirmScreen(ModalScreen[bool]):
     }
     """
 
-    def __init__(self, message: str) -> None:
+    def __init__(self, message: str, *, confirm_label: str = "Delete") -> None:
         super().__init__()
         self.message = message
+        self.confirm_label = confirm_label
 
     def compose(self) -> ComposeResult:
         with Vertical(id="confirm-box"):
             yield Label(self.message)
             with Horizontal(id="confirm-buttons"):
-                yield Button("Delete", variant="error", id="yes")
+                yield Button(self.confirm_label, variant="error", id="yes")
                 yield Button("Cancel", variant="primary", id="no")
 
     @on(Button.Pressed, "#yes")
@@ -79,62 +79,27 @@ class ConfirmScreen(ModalScreen[bool]):
             self.dismiss(False)
 
 
-class TagScreen(ModalScreen[str | None]):
-    """Prompt for a tag name."""
-
-    CSS = """
-    TagScreen {
-        align: center middle;
-    }
-    #tag-box {
-        width: 50;
-        height: auto;
-        border: thick $accent;
-        background: $surface;
-        padding: 1 2;
-    }
-    """
-
-    def __init__(self, title: str = "Add tag") -> None:
-        super().__init__()
-        self._title = title
-
-    def compose(self) -> ComposeResult:
-        with Vertical(id="tag-box"):
-            yield Label(self._title)
-            yield Input(placeholder="tag name…", id="tag-input")
-            with Horizontal(id="confirm-buttons"):
-                yield Button("OK", variant="primary", id="ok")
-                yield Button("Cancel", id="cancel")
-
-    def on_mount(self) -> None:
-        self.query_one("#tag-input", Input).focus()
-
-    @on(Button.Pressed, "#ok")
-    def ok(self) -> None:
-        val = self.query_one("#tag-input", Input).value.strip()
-        self.dismiss(val or None)
-
-    @on(Button.Pressed, "#cancel")
-    def cancel(self) -> None:
-        self.dismiss(None)
-
-    @on(Input.Submitted, "#tag-input")
-    def submit(self) -> None:
-        val = self.query_one("#tag-input", Input).value.strip()
-        self.dismiss(val or None)
-
-    def on_key(self, event) -> None:
-        if event.key == "escape":
-            self.dismiss(None)
-
-
 class WallpaperListItem(ListItem):
-    def __init__(self, item: WallpaperItem) -> None:
-        tag_s = f" [{', '.join(item.tags)}]" if item.tags else ""
-        label = f"{item.rel}{tag_s}"
-        super().__init__(Label(label))
+    """One library row; *marked* = multi-select for batch ops."""
+
+    def __init__(self, item: WallpaperItem, *, marked: bool = False) -> None:
         self.item = item
+        self.marked = marked
+        super().__init__(Label(self._text()))
+
+    def _text(self) -> str:
+        # Use a clear multi-select glyph (not a search “tag”)
+        mark = "● " if self.marked else "  "
+        return f"{mark}{self.item.rel}"
+
+    def set_marked(self, marked: bool) -> None:
+        if self.marked == marked:
+            return
+        self.marked = marked
+        try:
+            self.query_one(Label).update(self._text())
+        except Exception:
+            pass
 
 
 class MetaPane(Static):
@@ -147,22 +112,30 @@ class MetaPane(Static):
     }
     """
 
-    def show_item(self, item: WallpaperItem | None) -> None:
+    def show_item(
+        self,
+        item: WallpaperItem | None,
+        *,
+        marked: bool = False,
+        mark_count: int = 0,
+    ) -> None:
         if item is None:
-            self.update("[dim]Select a wallpaper[/dim]")
+            extra = f"\n[b]Marked:[/b] {mark_count}" if mark_count else ""
+            self.update(f"[dim]Select a wallpaper[/dim]{extra}")
             return
-        tags = ", ".join(item.tags) if item.tags else "—"
+        sel = "yes" if marked else "no"
+        batch = f"  ·  marked set: {mark_count}" if mark_count else ""
         self.update(
             f"[b]{item.rel}[/b]\n"
             f"Size: {item.size_label}   Dims: {item.dim_label}   "
             f"Modified: {item.mtime_label}\n"
-            f"Tags: {tags}\n"
+            f"In selection: {sel}{batch}\n"
             f"[dim]{item.path}[/dim]"
         )
 
 
 class ManageApp(App[None]):
-    """Wallpaper library manager."""
+    """Wallpaper library manager with multi-select batch ops."""
 
     TITLE = "wallpaperctl manage"
     CSS = """
@@ -207,11 +180,12 @@ class ManageApp(App[None]):
         Binding("slash", "focus_search", "Search", key_display="/"),
         Binding("s", "set_wallpaper", "Set"),
         Binding("d", "delete", "Delete"),
-        Binding("t", "add_tag", "Tag"),
-        Binding("u", "untag", "Untag"),
+        Binding("space", "toggle_mark", "Mark", key_display="space"),
+        Binding("t", "toggle_mark", "Mark", show=False),
+        Binding("a", "mark_all", "Mark all"),
+        Binding("u", "unmark_current", "Unmark"),
+        Binding("c", "clear_marks", "Clear marks"),
         Binding("r", "refresh", "Refresh"),
-        Binding("f", "filter_tag", "Filter tag"),
-        Binding("c", "clear_filter", "Clear filter"),
         Binding("enter", "set_wallpaper", "Set", show=False),
     ]
 
@@ -226,16 +200,16 @@ class ManageApp(App[None]):
         self.library_root = library_root.expanduser().resolve()
         self.ops = ops
         self.no_kitty = no_kitty
-        self.tags = TagStore()
         self._all: list[WallpaperItem] = []
         self._query = ""
-        self._tag_filter = ""
         self._selected: WallpaperItem | None = None
+        # Multi-select: resolved path strings
+        self._marked: set[str] = set()
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal(id="toolbar"):
-            yield Input(placeholder="Search name/tags…", id="search")
+            yield Input(placeholder="Search filename…", id="search")
             yield Label("", id="count-label")
         with Horizontal(id="body"):
             with Vertical(id="list-col"):
@@ -250,7 +224,10 @@ class ManageApp(App[None]):
         self._reload_library()
         self.query_one("#wall-list", ListView).focus()
         backend = self.query_one("#preview", PreviewPane).backend_label
-        self._status(f"Library: {self.library_root}  ·  preview: {backend}")
+        self._status(
+            f"Library: {self.library_root}  ·  preview: {backend}  ·  "
+            f"space/t mark · d deletes selection"
+        )
 
     def post_display_hook(self) -> None:
         """Paint Kitty/sixel *after* Textual draws the frame (inline graphics)."""
@@ -261,20 +238,15 @@ class ManageApp(App[None]):
         driver = self._driver
         if driver is None:
             return
-        # Modals (delete confirm, tag prompt) sit in the cell buffer; Kitty/sixel
-        # are drawn on top afterward and would cover them unless we clear first.
         if self._modal_open():
             pane.clear_protocol(driver.write)
             return
         pane.emit_protocol(driver.write)
 
     def _modal_open(self) -> bool:
-        """True when a ModalScreen is above the main manage screen."""
         try:
-            # Base screen + any pushed overlays
             if len(self.screen_stack) > 1:
                 return True
-            # Current screen itself may be a modal during transition
             return isinstance(self.screen, ModalScreen)
         except Exception:
             return False
@@ -282,52 +254,78 @@ class ManageApp(App[None]):
     def _status(self, msg: str) -> None:
         self.query_one("#status", Static).update(msg)
 
+    def _key(self, path: Path) -> str:
+        return str(path.expanduser().resolve())
+
+    def _is_marked(self, item: WallpaperItem) -> bool:
+        return self._key(item.path) in self._marked
+
+    def _mark_count(self) -> int:
+        return len(self._marked)
+
+    def _targets_for_batch(self) -> list[WallpaperItem]:
+        """Marked items if any, else the focused row alone."""
+        if self._marked:
+            by_key = {self._key(it.path): it for it in self._all}
+            return [by_key[k] for k in self._marked if k in by_key]
+        cur = self._current_item()
+        return [cur] if cur else []
+
+    def _refresh_meta(self) -> None:
+        item = self._selected
+        marked = self._is_marked(item) if item else False
+        self.query_one("#meta", MetaPane).show_item(
+            item, marked=marked, mark_count=self._mark_count()
+        )
+
+    def _update_count_label(self, n_visible: int) -> None:
+        m = self._mark_count()
+        mark_s = f"  ·  ● {m} marked" if m else ""
+        q = f"  ·  q={self._query!r}" if self._query else ""
+        self.query_one("#count-label", Label).update(
+            f"{n_visible}/{len(self._all)}{mark_s}{q}"
+        )
+
     def _reload_library(self) -> None:
-        self._all = scan_library(self.library_root, self.tags, with_dimensions=True)
+        self._all = scan_library(self.library_root, tags=None, with_dimensions=True)
+        # Drop marks for files that disappeared
+        alive = {self._key(it.path) for it in self._all}
+        self._marked &= alive
         self._apply_filter()
 
     def _apply_filter(self, *, select_index: int | None = None) -> None:
-        items = filter_items(self._all, query=self._query, tag=self._tag_filter)
+        items = filter_items(self._all, query=self._query, tag="")
         lv = self.query_one("#wall-list", ListView)
         lv.clear()
         for it in items:
-            lv.append(WallpaperListItem(it))
-        filt = []
-        if self._query:
-            filt.append(f"q={self._query!r}")
-        if self._tag_filter:
-            filt.append(f"tag={self._tag_filter!r}")
-        extra = f" ({', '.join(filt)})" if filt else ""
-        self.query_one("#count-label", Label).update(f"{len(items)}/{len(self._all)}{extra}")
+            lv.append(WallpaperListItem(it, marked=self._is_marked(it)))
+        self._update_count_label(len(items))
         if not items:
             self._selected = None
             self.query_one("#preview", PreviewPane).path = None
-            self.query_one("#meta", MetaPane).show_item(None)
+            self._refresh_meta()
             return
         if select_index is not None:
             self._select_index(select_index)
 
     def _current_index(self) -> int | None:
-        lv = self.query_one("#wall-list", ListView)
-        return lv.index
+        return self.query_one("#wall-list", ListView).index
 
     def _select_index(self, index: int) -> None:
-        """Highlight *index* and refresh meta/preview (clamped to list bounds)."""
         lv = self.query_one("#wall-list", ListView)
         n = len(lv.children)
         if n == 0:
             self._selected = None
             self.query_one("#preview", PreviewPane).path = None
-            self.query_one("#meta", MetaPane).show_item(None)
+            self._refresh_meta()
             return
         index = max(0, min(int(index), n - 1))
         lv.index = index
         child = lv.children[index]
         item = child.item if isinstance(child, WallpaperListItem) else None
         self._selected = item
-        self.query_one("#meta", MetaPane).show_item(item)
         self.query_one("#preview", PreviewPane).path = item.path if item else None
-        # Keep the row visible after list rebuild
+        self._refresh_meta()
         try:
             lv.scroll_to_widget(child, animate=False)
         except Exception:
@@ -345,22 +343,32 @@ class ManageApp(App[None]):
             return child.item
         return None
 
+    def _current_list_item(self) -> WallpaperListItem | None:
+        lv = self.query_one("#wall-list", ListView)
+        if lv.index is None:
+            return None
+        try:
+            child = lv.children[lv.index]
+        except IndexError:
+            return None
+        return child if isinstance(child, WallpaperListItem) else None
+
     @on(ListView.Highlighted, "#wall-list")
     def on_highlight(self, event: ListView.Highlighted) -> None:
         item = None
         if event.item is not None and isinstance(event.item, WallpaperListItem):
             item = event.item.item
         self._selected = item
-        self.query_one("#meta", MetaPane).show_item(item)
         self.query_one("#preview", PreviewPane).path = item.path if item else None
+        self._refresh_meta()
 
     @on(ListView.Selected, "#wall-list")
     def on_selected(self, event: ListView.Selected) -> None:
-        # Click / activate only selects (preview); set via `s` or Enter binding.
+        # Click only focuses/previews — does not set wallpaper or toggle mark
         if isinstance(event.item, WallpaperListItem):
             self._selected = event.item.item
-            self.query_one("#meta", MetaPane).show_item(event.item.item)
             self.query_one("#preview", PreviewPane).path = event.item.item.path
+            self._refresh_meta()
 
     @on(Input.Changed, "#search")
     def on_search(self, event: Input.Changed) -> None:
@@ -371,110 +379,121 @@ class ManageApp(App[None]):
         self.query_one("#search", Input).focus()
 
     def action_refresh(self) -> None:
-        self.tags.load()
         self._reload_library()
         self._status("Library refreshed")
 
-    def action_clear_filter(self) -> None:
-        self._query = ""
-        self._tag_filter = ""
-        self.query_one("#search", Input).value = ""
-        self._apply_filter()
-        self._status("Filters cleared")
-
     def action_help(self) -> None:
         self._status(
-            "Keys: / search · s set · d delete · t tag · u untag · "
-            "f filter-tag · c clear-filter · r refresh · q quit"
+            "space/t mark · a mark-all · u unmark · c clear-marks · "
+            "d delete (marked or current) · s set · / search · q quit"
         )
 
-    def action_filter_tag(self) -> None:
-        def done(tag: str | None) -> None:
-            if tag:
-                self._tag_filter = tag
-                self._apply_filter()
-                self._status(f"Filter tag: {tag}")
-
-        self.push_screen(TagScreen("Filter by tag"), done)
-
-    def action_add_tag(self) -> None:
-        item = self._current_item()
-        if not item:
-            self._status("Nothing selected")
+    def action_toggle_mark(self) -> None:
+        row = self._current_list_item()
+        if not row:
+            self._status("Nothing focused")
             return
+        key = self._key(row.item.path)
+        if key in self._marked:
+            self._marked.discard(key)
+            row.set_marked(False)
+            self._status(f"Unmarked {row.item.name}  ({self._mark_count()} marked)")
+        else:
+            self._marked.add(key)
+            row.set_marked(True)
+            self._status(f"Marked {row.item.name}  ({self._mark_count()} marked)")
+        self._update_count_label(len(self.query_one("#wall-list", ListView).children))
+        self._refresh_meta()
 
-        def done(tag: str | None) -> None:
-            if not tag:
-                return
-            item.tags = self.tags.add(item.path, tag)
-            self._reload_library()
-            self._status(f"Tagged {item.name}: {', '.join(item.tags)}")
+    def action_mark_all(self) -> None:
+        """Mark every row in the current (filtered) list."""
+        lv = self.query_one("#wall-list", ListView)
+        n = 0
+        for child in lv.children:
+            if isinstance(child, WallpaperListItem):
+                self._marked.add(self._key(child.item.path))
+                child.set_marked(True)
+                n += 1
+        self._update_count_label(n)
+        self._refresh_meta()
+        self._status(f"Marked all visible ({n})")
 
-        self.push_screen(TagScreen(f"Tag {item.name}"), done)
-
-    def action_untag(self) -> None:
-        item = self._current_item()
-        if not item:
-            self._status("Nothing selected")
+    def action_unmark_current(self) -> None:
+        row = self._current_list_item()
+        if not row:
+            self._status("Nothing focused")
             return
-        if not item.tags:
-            self._status("No tags on this wallpaper")
+        key = self._key(row.item.path)
+        if key not in self._marked:
+            self._status("Current row is not marked")
             return
-        if len(item.tags) == 1:
-            item.tags = self.tags.remove(item.path, item.tags[0])
-            self._reload_library()
-            self._status(f"Removed tag from {item.name}")
+        self._marked.discard(key)
+        row.set_marked(False)
+        self._update_count_label(len(self.query_one("#wall-list", ListView).children))
+        self._refresh_meta()
+        self._status(f"Unmarked {row.item.name}  ({self._mark_count()} marked)")
+
+    def action_clear_marks(self) -> None:
+        if not self._marked:
+            self._status("No marks to clear")
             return
-
-        def done(tag: str | None) -> None:
-            if not tag:
-                return
-            item.tags = self.tags.remove(item.path, tag)
-            self._reload_library()
-            self._status(f"Removed tag {tag!r} from {item.name}")
-
-        self.push_screen(
-            TagScreen(f"Remove which tag? ({', '.join(item.tags)})"),
-            done,
-        )
+        self._marked.clear()
+        lv = self.query_one("#wall-list", ListView)
+        for child in lv.children:
+            if isinstance(child, WallpaperListItem):
+                child.set_marked(False)
+        self._update_count_label(len(lv.children))
+        self._refresh_meta()
+        self._status("Cleared multi-selection")
 
     def action_delete(self) -> None:
-        item = self._current_item()
-        if not item:
-            self._status("Nothing selected")
+        targets = self._targets_for_batch()
+        if not targets:
+            self._status("Nothing to delete (focus a row or mark some)")
             return
-        # Prefer previous row after delete; if first item, stay on new first.
+
         idx = self._current_index()
         prev_index = 0 if idx is None else max(0, idx - 1)
+        batch = len(targets) > 1 or bool(self._marked)
+        if batch:
+            names = "\n".join(f"  · {t.rel}" for t in targets[:12])
+            more = f"\n  … and {len(targets) - 12} more" if len(targets) > 12 else ""
+            msg = f"Delete {len(targets)} wallpapers permanently?\n{names}{more}"
+        else:
+            msg = f"Delete permanently?\n{targets[0].path}"
 
         def done(ok: bool | None) -> None:
             if not ok:
                 self._status("Delete cancelled")
                 return
-            try:
-                item.path.unlink()
-                self.tags.drop_path(item.path)
-                self._status(f"Deleted {item.rel}")
-            except OSError as e:
-                self._status(f"Delete failed: {e}")
-                return
+            deleted = 0
+            errors = 0
+            for t in targets:
+                try:
+                    t.path.unlink()
+                    self._marked.discard(self._key(t.path))
+                    deleted += 1
+                except OSError:
+                    errors += 1
+            if errors:
+                self._status(f"Deleted {deleted}, failed {errors}")
+            else:
+                self._status(f"Deleted {deleted} wallpaper(s)")
             self._all = scan_library(
-                self.library_root, self.tags, with_dimensions=True
+                self.library_root, tags=None, with_dimensions=True
             )
-            # idx-1 is the former previous entry; if we deleted index 0,
-            # prev_index is 0 (next item shifts into place).
+            alive = {self._key(it.path) for it in self._all}
+            self._marked &= alive
             self._apply_filter(select_index=prev_index)
 
-        self.push_screen(
-            ConfirmScreen(f"Delete permanently?\n{item.path}"),
-            done,
-        )
+        self.push_screen(ConfirmScreen(msg), done)
 
     @work(thread=True)
     def action_set_wallpaper(self) -> None:
+        # Always the focused row only (not the multi-select set)
         item = self._current_item()
         if not item:
-            self.call_from_thread(self._status, "Nothing selected")
+            self.call_from_thread(self._status, "Nothing focused")
             return
         if not item.path.is_file():
             self.call_from_thread(self._status, "File missing")
