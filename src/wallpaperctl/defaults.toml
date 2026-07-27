@@ -41,3 +41,10 @@ perceptual_hash_threshold = 14
 hash_size = 8
 hash_consensus_slack = 4
 fetch_max_attempts = 5
+
+# Theme-op runner limits (per operation)
+operation_timeout = 30
+wallust_timeout = 10
+openrgb_timeout = 5
+max_retries = 3
+retry_delay = 1.0

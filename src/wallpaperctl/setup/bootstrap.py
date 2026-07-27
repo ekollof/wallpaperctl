@@ -2,26 +2,40 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from wallpaperctl.util import home
 
 _OPS_TOML = """\
 # wallpaperctl operations config
-# See: wallpaperctl setup check
+# Defaults: package defaults.toml; this file overrides.
+# See: wallpaperctl setup check | wallpaperctl ops list
 
-# rgb_color_strategy = "warmest"   # or least_blue, most_saturated, fixed
+operations_enabled = true
+continue_on_error = true
+
+# Color / wallust (uncomment to override)
+# rgb_color_strategy = "warmest"
+#   # least_blue | warmest | most_saturated | coolest | brightest | fixed
 # wallust_backend = "wal"
 # wallust_palette = "kmeans"
+# operation_timeout = 30
+# wallust_timeout = 10
+# openrgb_timeout = 5
+# max_retries = 3
+# retry_delay = 1.0
 
 [enable]
 wallust = true
+xresources = true
 gtk_theme = true
+notifications = true
 openrgb = true
-homeassistant = true
+emacs = true
+window_manager = true
+nwg_look = true
+cinnamon_theme = true
 dynamic_icons = false
-# notifications = true
-# nwg_look = true
+homeassistant = true
+steam_theme = false
 """
 
 _API_HINT = """\

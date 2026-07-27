@@ -9,9 +9,10 @@ from __future__ import annotations
 import logging
 import os
 import re
-import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import tomllib
 
 from wallpaperctl.util import home
 
@@ -61,7 +62,6 @@ class OpsConfig:
     enable_dynamic_icons: bool = False
     enable_homeassistant: bool = True
     enable_steam_theme: bool = False
-    enable_starttree: bool = True
 
     wallust_backend: str = "wal"
     wallust_palette: str = "kmeans"

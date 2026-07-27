@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 
 from wallpaperctl.context import WallpaperContext
 from wallpaperctl.theme.cinnamon_theme import CinnamonThemeOp
@@ -42,6 +44,29 @@ def list_ops() -> list[str]:
     return [op.name for op in THEME_OPS]
 
 
+def _timeout_for(op_name: str, ctx: WallpaperContext) -> float:
+    if op_name == "wallust":
+        return float(ctx.ops.wallust_timeout)
+    if op_name == "openrgb":
+        return float(ctx.ops.openrgb_timeout)
+    return float(ctx.ops.operation_timeout)
+
+
+def _run_op_once(op, ctx: WallpaperContext, timeout: float) -> bool:
+    """Run op.run(ctx) with a wall-clock timeout. Returns False on timeout/error."""
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        fut = pool.submit(op.run, ctx)
+        try:
+            return bool(fut.result(timeout=timeout))
+        except FuturesTimeout:
+            log.warning(
+                "Theme op %s timed out after %ss",
+                op.name,
+                timeout,
+            )
+            return False
+
+
 def run_theme_ops(ctx: WallpaperContext) -> tuple[int, int]:
     """Returns (failed, total_enabled)."""
     if not ctx.ops.operations_enabled:
@@ -50,17 +75,40 @@ def run_theme_ops(ctx: WallpaperContext) -> tuple[int, int]:
 
     failed = 0
     total = 0
+    max_retries = max(1, int(ctx.ops.max_retries))
+    retry_delay = float(ctx.ops.retry_delay)
+
     for op in THEME_OPS:
         if not op.enabled(ctx):
             log.debug("Skipping theme op %s (disabled/N/A)", op.name)
             continue
         total += 1
-        log.debug("Executing theme operation: %s", op.name)
-        try:
-            ok = op.run(ctx)
-        except Exception as e:
-            log.warning("Theme op %s raised: %s", op.name, e)
-            ok = False
+        timeout = _timeout_for(op.name, ctx)
+        log.debug(
+            "Executing theme operation: %s (timeout=%ss, max_attempts=%s)",
+            op.name,
+            timeout,
+            max_retries,
+        )
+        ok = False
+        for attempt in range(1, max_retries + 1):
+            try:
+                ok = _run_op_once(op, ctx, timeout)
+            except Exception as e:
+                log.warning("Theme op %s raised: %s", op.name, e)
+                ok = False
+            if ok:
+                break
+            if attempt < max_retries:
+                log.debug(
+                    "Theme op %s failed attempt %s/%s; retrying in %ss",
+                    op.name,
+                    attempt,
+                    max_retries,
+                    retry_delay,
+                )
+                time.sleep(retry_delay)
+
         if ok:
             log.debug("Theme op %s ok", op.name)
         else:
