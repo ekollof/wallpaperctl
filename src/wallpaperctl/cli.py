@@ -44,6 +44,7 @@ def main(argv: list[str] | None = None) -> int:
         "cleanup",
         "verify",
         "setup",
+        "migrate",
         "version",
         "help",
     }
@@ -186,12 +187,13 @@ def _run_action(
             )
             if r.returncode == 0:
                 print(f"Reloaded wallpaper via Noctalia: {wallpaper.name}")
-                apply_wallpaper(
+                save_current_wallpaper(wallpaper, ops)
+                ok = apply_wallpaper(
                     wallpaper,
                     ops,
                     debug=debug,
                 )
-                return 0
+                return 0 if ok else 1
             print(
                 "Warning: Noctalia wallpaper reload failed, falling back...",
                 file=sys.stderr,
@@ -219,7 +221,7 @@ def _run_action(
             )
 
     save_current_wallpaper(wallpaper, ops)
-    apply_wallpaper(
+    ok = apply_wallpaper(
         wallpaper,
         ops,
         photographer_name=photographer_name,
@@ -227,7 +229,7 @@ def _run_action(
         provider_name=provider_name,
         debug=debug,
     )
-    return 0
+    return 0 if ok else 1
 
 
 def _subcommand_main(argv: list[str]) -> int:
@@ -353,6 +355,10 @@ def _subcommand_main(argv: list[str]) -> int:
         default="all",
         choices=["all", "icons", "cinnamon", "wal"],
         help="What to verify (default: all)",
+    )
+    sub.add_parser(
+        "migrate",
+        help="Read-only cutover checklist (shell scripts → wallpaperctl)",
     )
     p_setup = sub.add_parser(
         "setup",
@@ -497,6 +503,10 @@ def _subcommand_main(argv: list[str]) -> int:
             optional=args.optional,
             all_desktops=args.all_desktops,
         )
+    if args.cmd == "migrate":
+        from wallpaperctl.maint.migrate import run_migrate_check
+
+        return run_migrate_check(ops)
 
     lock = WallpaperLock()
 

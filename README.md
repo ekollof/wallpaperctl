@@ -87,12 +87,14 @@ wallpaperctl setup wallust --force    # overwrite existing wallust.toml (backs u
 wallpaperctl setup themes         # install FlatColor / FlatColor-dark GTK themes
 wallpaperctl setup config         # create dirs + sample ops.toml / config.sh
 wallpaperctl setup all            # config + themes + check + install + wallust
+wallpaperctl migrate              # cutover checklist (PATH, config, tools)
 ```
 
 Shipped data under `src/wallpaperctl/data/`:
 
 - **`wallust/`** — `wallust.toml`, templates, hook scripts  
 - **`themes/FlatColor`** (+ `FlatColor-dark` → symlink) — wallust-driven GTK theme  
+- **`cinnamon/`** — dynamic Cinnamon CSS/GTK templates (theme op)
 
 No secrets; safe to distribute. Themes install to `~/.local/share/themes/`.
 
@@ -205,12 +207,68 @@ Required for full functionality (soft-deps skip when missing):
 `wallpaperctl` is fully self-contained — it does **not** call or depend on
 `~/bin/wallpaper` or `~/bin/wallpaper.d/`.
 
-1. Install with pipx/uv.  
-2. Keep `~/.config/wallpaper/config.sh` as-is (API keys only).  
-3. Optionally put ops toggles in `~/.config/wallpaperctl/ops.toml`.  
-4. Point bindings / cron / hyprland exec from `wallpaper` to `wallpaperctl` (or
-   use the `wallpaper` entry point installed by this package).  
-5. Once happy, you can remove the old shell scripts.
+### Same machine (cut over from `~/bin`)
+
+1. Install the package (pipx/uv tool or editable checkout).
+2. Keep **`~/.config/wallpaper/config.sh`** as-is (API keys + default categories).
+3. Optionally create ops toggles: `wallpaperctl setup config` →  
+   `~/.config/wallpaperctl/ops.toml`.
+4. Bootstrap DE data if needed:
+   ```bash
+   wallpaperctl setup check
+   wallpaperctl setup wallust      # templates + wallust.toml
+   wallpaperctl setup themes       # FlatColor GTK themes
+   # or: wallpaperctl setup all
+   wallpaperctl migrate            # PATH / config / tools checklist
+   ```
+5. Smoke-test **without** removing shell tools yet:
+   ```bash
+   wallpaperctl detect
+   wallpaperctl migrate
+   wallpaperctl -R                 # reload last wallpaper
+   which -a wallpaper wallpaperctl # see PATH order
+   ```
+6. Point bindings / cron / Hyprland `exec` / keyboard shortcuts at **`wallpaperctl`**
+   (or the `wallpaper` entry point this package installs — ensure it wins on `PATH`
+   over `~/bin/wallpaper` if both exist).
+7. When stable, remove or rename the old scripts (`~/bin/wallpaper`,
+   `wallpaper.d`, `wallpaper-cache`, `wallpaper-reload-wm`, …).
+
+**State files are shared** with the shell tool (`~/.wallpaper`, `~/Wallpapers`,
+URL/hash caches). You do not need to re-download the library.
+
+### New machine (portable install)
+
+```bash
+pipx install git+https://github.com/ekollof/wallpaperctl.git
+# or: uv tool install git+https://github.com/ekollof/wallpaperctl.git
+
+wallpaperctl setup all             # dirs, sample configs, themes, deps, wallust
+# edit ~/.config/wallpaper/config.sh  # only if you want remote fetch (-r)
+wallpaperctl detect
+wallpaperctl                       # random local from ~/Wallpapers
+```
+
+No need to copy `~/bin` wallpaper scripts. System packages for your DE can be
+offered via `wallpaperctl setup install`.
+
+### Behaviour notes vs shell
+
+| Topic | wallpaperctl |
+|-------|----------------|
+| Local library | Recursive under `~/Wallpapers` (image extensions) |
+| Dedup | Multi-hash index (`dHash`+`pHash`+`aHash`) of full library |
+| Credits / resize | Pillow only (no ImageMagick) |
+| D-Bus (Plasma, notify) | jeepney (no `dbus-send` / `notify-send` required) |
+| Cinnamon dynamic theme | Full CSS templates; does **not** force GTK to `cinnamon-dynamic` |
+| Cinnamon decorations | Optional full restart: `RESTART_CINNAMON_AFTER_THEME=1` or `reload-wm --restart` |
+| Failed wallpaper set | Non-zero exit (theme ops skipped) |
+| starttree | Removed (unused) |
+
+### Coexistence
+
+Until cutover, both tools may be on `PATH`. Prefer calling `wallpaperctl`
+explicitly, or put the pipx/uv shims **before** `~/bin` in `PATH`.
 
 ## Development
 

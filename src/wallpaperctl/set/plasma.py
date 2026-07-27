@@ -41,7 +41,40 @@ class PlasmaSetter:
         lock_ok = self._set_lockscreen(path, ctx)
         if not lock_ok:
             debug_set(self.name, "lockscreen wallpaper update failed", ctx)
+        if ok and self._is_screen_locked():
+            debug_set(
+                self.name,
+                "screen is locked — lockscreen wallpaper may not show until unlock",
+                ctx,
+            )
+            log.info(
+                "Plasma screen locked: lockscreen wallpaper updated but may not "
+                "be visible until unlock"
+            )
         return ok
+
+    @staticmethod
+    def _is_screen_locked() -> bool:
+        """True if the session screensaver reports active (best-effort)."""
+        for bus, path, iface in (
+            ("org.freedesktop.ScreenSaver", "/ScreenSaver", "org.freedesktop.ScreenSaver"),
+            ("org.kde.screensaver", "/ScreenSaver", "org.freedesktop.ScreenSaver"),
+        ):
+            ok, body = dbus_call(
+                bus_name=bus,
+                path=path,
+                interface=iface,
+                method="GetActive",
+                signature="",
+                body=(),
+                timeout=1.0,
+            )
+            if ok and body:
+                try:
+                    return bool(body[0])
+                except (IndexError, TypeError):
+                    pass
+        return False
 
     def _set_desktop(self, path: Path, ctx: WallpaperContext) -> bool:
         uri = path.as_uri()
