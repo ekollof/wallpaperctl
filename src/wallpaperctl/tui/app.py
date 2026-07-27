@@ -286,7 +286,7 @@ class ManageApp(App[None]):
         self._all = scan_library(self.library_root, self.tags, with_dimensions=True)
         self._apply_filter()
 
-    def _apply_filter(self) -> None:
+    def _apply_filter(self, *, select_index: int | None = None) -> None:
         items = filter_items(self._all, query=self._query, tag=self._tag_filter)
         lv = self.query_one("#wall-list", ListView)
         lv.clear()
@@ -303,6 +303,35 @@ class ManageApp(App[None]):
             self._selected = None
             self.query_one("#preview", PreviewPane).path = None
             self.query_one("#meta", MetaPane).show_item(None)
+            return
+        if select_index is not None:
+            self._select_index(select_index)
+
+    def _current_index(self) -> int | None:
+        lv = self.query_one("#wall-list", ListView)
+        return lv.index
+
+    def _select_index(self, index: int) -> None:
+        """Highlight *index* and refresh meta/preview (clamped to list bounds)."""
+        lv = self.query_one("#wall-list", ListView)
+        n = len(lv.children)
+        if n == 0:
+            self._selected = None
+            self.query_one("#preview", PreviewPane).path = None
+            self.query_one("#meta", MetaPane).show_item(None)
+            return
+        index = max(0, min(int(index), n - 1))
+        lv.index = index
+        child = lv.children[index]
+        item = child.item if isinstance(child, WallpaperListItem) else None
+        self._selected = item
+        self.query_one("#meta", MetaPane).show_item(item)
+        self.query_one("#preview", PreviewPane).path = item.path if item else None
+        # Keep the row visible after list rebuild
+        try:
+            lv.scroll_to_widget(child, animate=False)
+        except Exception:
+            pass
 
     def _current_item(self) -> WallpaperItem | None:
         lv = self.query_one("#wall-list", ListView)
@@ -414,6 +443,9 @@ class ManageApp(App[None]):
         if not item:
             self._status("Nothing selected")
             return
+        # Prefer previous row after delete; if first item, stay on new first.
+        idx = self._current_index()
+        prev_index = 0 if idx is None else max(0, idx - 1)
 
         def done(ok: bool | None) -> None:
             if not ok:
@@ -426,7 +458,12 @@ class ManageApp(App[None]):
             except OSError as e:
                 self._status(f"Delete failed: {e}")
                 return
-            self._reload_library()
+            self._all = scan_library(
+                self.library_root, self.tags, with_dimensions=True
+            )
+            # idx-1 is the former previous entry; if we deleted index 0,
+            # prev_index is 0 (next item shifts into place).
+            self._apply_filter(select_index=prev_index)
 
         self.push_screen(
             ConfirmScreen(f"Delete permanently?\n{item.path}"),
