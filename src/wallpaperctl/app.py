@@ -12,7 +12,6 @@ from wallpaperctl.detect.desktop import detect_desktop
 from wallpaperctl.notify import safe_notify
 from wallpaperctl.set.runner import run_wallpaper_setters
 from wallpaperctl.theme.runner import run_theme_ops
-from wallpaperctl.util import home
 
 log = logging.getLogger("wallpaperctl")
 
@@ -43,7 +42,12 @@ def apply_wallpaper(
     photographer_username: str = "",
     provider_name: str = "",
     debug: bool = False,
-) -> None:
+) -> bool:
+    """Set wallpaper and run theme ops.
+
+    Returns True if at least one wallpaper setter succeeded. Theme-op failures
+    are soft (warnings only) and do not flip the return value to False.
+    """
     path = path.expanduser()
     if not path.is_file():
         raise SystemExit(f"Error: File '{path}' not found!")
@@ -69,6 +73,15 @@ def apply_wallpaper(
     log.debug("Applying wallpaper %s on DE %s", ctx.path, de.name)
 
     set_ok, set_total = run_wallpaper_setters(ctx)
+    if set_total == 0 or set_ok == 0:
+        msg = (
+            "Error: Failed to set wallpaper "
+            f"(setters attempted={set_total}, succeeded={set_ok}, DE={de.name})"
+        )
+        print(msg, file=sys.stderr)
+        safe_notify("Wallpaper Script", msg)
+        return False
+
     theme_failed, theme_total = run_theme_ops(ctx)
 
     set_failed = set_total - set_ok
@@ -87,3 +100,4 @@ def apply_wallpaper(
         safe_notify("Wallpaper Script", f"Wallpaper set with credits: {name}")
     else:
         safe_notify("Wallpaper Script", f"Wallpaper set: {name}")
+    return True
