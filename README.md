@@ -199,22 +199,24 @@ Optional: `~/.config/hass.cfg` (`[auth]` with `server=`, `token=`, `lamp=`).
 | Noctalia | `qs -c noctalia-shell ipc call wallpaper set … all` |
 | XFCE | `xfconf-query` for **connected** outputs (xrandr) + existing keys; creates missing multihead/dock props |
 | Cinnamon | `gsettings` picture-uri + options |
+| COSMIC | wallust → `CosmicBackground` + **cosmic-theme** op writes `CosmicTheme.*/v2` hex accents |
 | Fallback X11 | `feh` → `nitrogen` → `hsetroot` → `xwallpaper` → `xsetbg` |
 
 ## Theme operations (order)
 
 1. wallust  
-2. xresources (`xrdb -merge`)  
-3. nwg-look  
-4. notifications (dunst / mako + waybar)  
-5. openrgb  
-6. emacs (`emacs-daemon`)  
-7. window-manager signals (`xsetroot`, xsettingsd, awesome)  
-8. gtk-theme  
-9. cinnamon-theme (dynamic CSS/WM theme)  
-10. dynamic-icons  
-11. homeassistant  
-12. steam-theme (stub / disabled, same as shell)
+2. cosmic-theme (COSMIC DE v2 hex accent / surfaces from palette)  
+3. xresources (`xrdb -merge`)  
+4. nwg-look  
+5. notifications (dunst / mako + waybar)  
+6. openrgb  
+7. emacs (`emacs-daemon`)  
+8. window-manager signals (`xsetroot`, xsettingsd, awesome)  
+9. gtk-theme  
+10. cinnamon-theme (dynamic CSS/WM theme)  
+11. dynamic-icons  
+12. homeassistant  
+13. steam-theme (stub / disabled, same as shell)
 
 Wallpaper setters run **before** theme ops.
 

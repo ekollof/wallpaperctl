@@ -452,7 +452,8 @@ def _subcommand_main(argv: list[str]) -> int:
         print(f"Desktop: {de.name}")
         print(
             f"  plasma={de.plasma} hyprland={de.hyprland} noctalia={de.noctalia} "
-            f"xfce={de.xfce} cinnamon={de.cinnamon} awesome={de.awesome}"
+            f"xfce={de.xfce} cinnamon={de.cinnamon} cosmic={de.cosmic} "
+            f"awesome={de.awesome}"
         )
         if tools.missing_required:
             print("Missing required:")

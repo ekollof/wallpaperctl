@@ -79,8 +79,13 @@ gtk4 = { template = "gtk4.0.base", target = "~/.config/gtk-4.0/gtk.css", new_eng
 hyprpaper = { template = "hyprpaper.conf", target = "~/.config/hypr/hyprpaper.conf", pywal = true }
 hyprland = { template = "colors-hyprland.conf", target = "~/.cache/wal/colors-hyprland.conf", pywal = true }
 waybar = { template = "colors-waybar.css", target = "~/.cache/wal/colors-waybar.css", pywal = true }
+# Wallpaper path for cosmic-bg (still v1 path)
 cosmic = { template = "cosmic-wallpaper", target = "~/.config/cosmic/com.system76.CosmicBackground/v1/all", pywal = true}
-cosmicaccent = { template = "cosmic_accent_dark.j2", target="~/.config/cosmic/com.system76.CosmicTheme.Dark/v1/accent" }
+# Accent colors: COSMIC now uses v2 hex RON. wallpaperctl's cosmic-theme op
+# writes Dark/Light v2 accent* after wallust; keep these only as a fallback.
+# (v1 float RGB is ignored by current cosmic-comp.)
+cosmicaccent = { template = "cosmic_accent_v2.j2", target = "~/.config/cosmic/com.system76.CosmicTheme.Dark/v2/accent", new_engine = true }
+cosmicaccentbtn = { template = "cosmic_accent_v2.j2", target = "~/.config/cosmic/com.system76.CosmicTheme.Dark/v2/accent_button", new_engine = true }
 starship = { template = "starship.toml", target = "~/.config/starship.toml"}
 xonsh = { template = "xonshrc.py", target = "~/.xonshrc" }
 neomutt = { template = "pywal.muttrc", target = "~/.cache/wal/colors.muttrc.unused", new_engine = true }

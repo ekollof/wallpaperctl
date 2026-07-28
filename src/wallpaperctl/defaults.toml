@@ -17,6 +17,7 @@ cinnamon_theme = true
 dynamic_icons = false
 homeassistant = true
 steam_theme = false
+cosmic_theme = true
 
 [wallust]
 # mapped via flat keys below for simplicity — use top-level too

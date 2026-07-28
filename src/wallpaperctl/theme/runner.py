@@ -10,6 +10,7 @@ from concurrent.futures import TimeoutError as FuturesTimeout
 
 from wallpaperctl.context import WallpaperContext
 from wallpaperctl.theme.cinnamon_theme import CinnamonThemeOp
+from wallpaperctl.theme.cosmic import CosmicThemeOp
 from wallpaperctl.theme.dynamic_icons import DynamicIconsOp
 from wallpaperctl.theme.emacs import EmacsOp
 from wallpaperctl.theme.gtk_theme import GtkThemeOp
@@ -26,6 +27,7 @@ log = logging.getLogger("wallpaperctl")
 
 THEME_OPS = [
     WallustOp(),
+    CosmicThemeOp(),  # needs wallust colors; COSMIC v2 hex accent files
     XresourcesOp(),
     NwgLookOp(),
     NotificationsOp(),

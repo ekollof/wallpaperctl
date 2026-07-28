@@ -62,6 +62,7 @@ class OpsConfig:
     enable_dynamic_icons: bool = False
     enable_homeassistant: bool = True
     enable_steam_theme: bool = False
+    enable_cosmic_theme: bool = True
 
     wallust_backend: str = "wal"
     wallust_palette: str = "kmeans"

@@ -19,11 +19,14 @@ class DesktopEnvironment:
     cinnamon: bool = False
     noctalia: bool = False
     awesome: bool = False
+    cosmic: bool = False
 
     @property
     def name(self) -> str:
         if self.plasma:
             return "plasma"
+        if self.cosmic:
+            return "cosmic"
         if self.hyprland and self.noctalia:
             return "hyprland+noctalia"
         if self.hyprland:
@@ -38,7 +41,13 @@ class DesktopEnvironment:
 
     @property
     def is_de(self) -> bool:
-        return self.plasma or self.hyprland or self.xfce or self.cinnamon
+        return (
+            self.plasma
+            or self.hyprland
+            or self.xfce
+            or self.cinnamon
+            or self.cosmic
+        )
 
 
 def is_plasma_running() -> bool:
@@ -119,6 +128,24 @@ def is_awesome_running() -> bool:
     return pgrep_exact("awesome")
 
 
+def is_cosmic_running() -> bool:
+    """System76 COSMIC desktop session."""
+    import os
+
+    xdg = os.environ.get("XDG_CURRENT_DESKTOP", "")
+    if "COSMIC" in xdg.upper() or xdg.strip() == "pop:COSMIC":
+        log.debug("COSMIC detected (XDG_CURRENT_DESKTOP)")
+        return True
+    session = os.environ.get("DESKTOP_SESSION", "").lower()
+    if "cosmic" in session:
+        log.debug("COSMIC detected (DESKTOP_SESSION)")
+        return True
+    if pgrep_exact("cosmic-session") or pgrep_exact("cosmic-comp"):
+        log.debug("COSMIC detected (process)")
+        return True
+    return False
+
+
 def detect_desktop() -> DesktopEnvironment:
     de = DesktopEnvironment(
         plasma=is_plasma_running(),
@@ -127,6 +154,7 @@ def detect_desktop() -> DesktopEnvironment:
         cinnamon=is_cinnamon_running(),
         noctalia=is_noctalia_running(),
         awesome=is_awesome_running(),
+        cosmic=is_cosmic_running(),
     )
     log.debug("Detected desktop: %s", de.name)
     return de
