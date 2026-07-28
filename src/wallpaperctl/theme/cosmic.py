@@ -478,12 +478,15 @@ class CosmicThemeOp:
         return dark.is_dir()
 
     def run(self, ctx: WallpaperContext) -> bool:
-        # Keep greeter/lock wallpaper state in sync with the session image.
-        # (cosmic-greeter reads BgState, not only CosmicBackground config.)
+        # Greeter lock wallpaper: write state, then rate-limited greeter reload
+        # (see set/cosmic.py — unlock clears surface_names; state notify alone
+        # cannot repopulate lock images).
         try:
             from wallpaperctl.set.cosmic import sync_cosmic_wallpaper
 
-            ok_bg, bg_detail = sync_cosmic_wallpaper(ctx.path)
+            ok_bg, bg_detail = sync_cosmic_wallpaper(
+                ctx.path, reload_greeter=True
+            )
             debug_op(self.name, f"lock/session wallpaper: {bg_detail}", ctx)
             if not ok_bg:
                 log.warning("COSMIC wallpaper sync: %s", bg_detail)
@@ -493,7 +496,6 @@ class CosmicThemeOp:
         colors = read_wal_colors()
         if len(colors) < 8:
             debug_op(self.name, "not enough wal colors (run wallust first)", ctx)
-            # Wallpaper state may still have been updated
             return True
 
         mode = str(getattr(ctx.ops, "cosmic_theme_mode", "surfaces") or "surfaces")
@@ -531,7 +533,7 @@ class CosmicThemeOp:
             f"accent {raw} → {soft} ({len(written)} files)",
             ctx,
         )
-        log.info(
+        log.debug(
             "COSMIC theme updated (mode=%s, soft accent %s, %s files) + lock wallpaper",
             mode,
             soft,
