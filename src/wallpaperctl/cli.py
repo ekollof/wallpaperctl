@@ -476,6 +476,7 @@ def _subcommand_main(argv: list[str]) -> int:
         print("\nWallpaper setters:")
         for name in (
             "plasma",
+            "cosmic",
             "noctalia",
             "hyprland",
             "xfce",

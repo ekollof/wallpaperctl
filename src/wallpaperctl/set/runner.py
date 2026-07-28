@@ -7,6 +7,7 @@ import sys
 
 from wallpaperctl.context import WallpaperContext
 from wallpaperctl.set.cinnamon import CinnamonSetter
+from wallpaperctl.set.cosmic import CosmicSetter
 from wallpaperctl.set.fallback import FallbackSetter
 from wallpaperctl.set.hyprland import HyprlandSetter
 from wallpaperctl.set.noctalia import NoctaliaSetter
@@ -17,6 +18,7 @@ log = logging.getLogger("wallpaperctl")
 
 SETTERS = [
     PlasmaSetter(),
+    CosmicSetter(),
     NoctaliaSetter(),  # before hyprland so noctalia wins when both apply
     HyprlandSetter(),
     XfceSetter(),

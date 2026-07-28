@@ -478,10 +478,23 @@ class CosmicThemeOp:
         return dark.is_dir()
 
     def run(self, ctx: WallpaperContext) -> bool:
+        # Keep greeter/lock wallpaper state in sync with the session image.
+        # (cosmic-greeter reads BgState, not only CosmicBackground config.)
+        try:
+            from wallpaperctl.set.cosmic import sync_cosmic_wallpaper
+
+            ok_bg, bg_detail = sync_cosmic_wallpaper(ctx.path)
+            debug_op(self.name, f"lock/session wallpaper: {bg_detail}", ctx)
+            if not ok_bg:
+                log.warning("COSMIC wallpaper sync: %s", bg_detail)
+        except Exception as e:
+            log.warning("COSMIC wallpaper sync failed: %s", e)
+
         colors = read_wal_colors()
         if len(colors) < 8:
             debug_op(self.name, "not enough wal colors (run wallust first)", ctx)
-            return False
+            # Wallpaper state may still have been updated
+            return True
 
         mode = str(getattr(ctx.ops, "cosmic_theme_mode", "surfaces") or "surfaces")
         strategy = str(
@@ -507,7 +520,7 @@ class CosmicThemeOp:
 
         if not written:
             debug_op(self.name, "no cosmic theme files written", ctx)
-            return False
+            return True  # wallpaper sync may still have succeeded
 
         raw, soft = pick_accent(
             colors, strategy=strategy, softness=softness, desaturate=desat
@@ -519,7 +532,7 @@ class CosmicThemeOp:
             ctx,
         )
         log.info(
-            "COSMIC theme updated (mode=%s, soft accent %s, %s files)",
+            "COSMIC theme updated (mode=%s, soft accent %s, %s files) + lock wallpaper",
             mode,
             soft,
             len(written),

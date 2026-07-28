@@ -199,7 +199,7 @@ Optional: `~/.config/hass.cfg` (`[auth]` with `server=`, `token=`, `lamp=`).
 | Noctalia | `qs -c noctalia-shell ipc call wallpaper set … all` |
 | XFCE | `xfconf-query` for **connected** outputs (xrandr) + existing keys; creates missing multihead/dock props |
 | Cinnamon | `gsettings` picture-uri + options |
-| COSMIC | wallust → `CosmicBackground` + **cosmic-theme** (soft accent + surfaces from palette; see `cosmic_theme_mode`) |
+| COSMIC | **cosmic** setter updates Background *config + state* (session + lock/greeter); **cosmic-theme** soft palette |
 | Fallback X11 | `feh` → `nitrogen` → `hsetroot` → `xwallpaper` → `xsetbg` |
 
 ## Theme operations (order)
