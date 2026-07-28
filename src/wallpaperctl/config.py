@@ -63,6 +63,13 @@ class OpsConfig:
     enable_homeassistant: bool = True
     enable_steam_theme: bool = False
     enable_cosmic_theme: bool = True
+    # accent | surfaces | full — see theme/cosmic.py
+    cosmic_theme_mode: str = "surfaces"
+    # Reuse rgb strategy names, or set explicitly
+    cosmic_accent_strategy: str = "warmest"
+    # 0 = raw palette accent, 1 = fully mixed into wallpaper bg
+    cosmic_accent_softness: float = 0.42
+    cosmic_accent_desaturate: float = 0.22
 
     wallust_backend: str = "wal"
     wallust_palette: str = "kmeans"

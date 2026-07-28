@@ -17,6 +17,9 @@ continue_on_error = true
 #   # least_blue | warmest | most_saturated | coolest | brightest | fixed
 # wallust_backend = "wal"
 # wallust_palette = "kmeans"
+# cosmic_theme_mode = "surfaces"       # accent | surfaces | full
+# cosmic_accent_softness = 0.42
+# cosmic_accent_desaturate = 0.22
 # operation_timeout = 30
 # wallust_timeout = 10
 # openrgb_timeout = 5

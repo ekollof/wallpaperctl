@@ -38,6 +38,12 @@ wallpaper_scaling_cinnamon = "scaled"
 wallpaper_scaling_gnome = "scaled"
 wallpaper_dir = "~/Wallpapers"
 
+# COSMIC theming (see theme/cosmic.py)
+# cosmic_theme_mode = "surfaces"   # accent | surfaces | full
+# cosmic_accent_strategy = "warmest"
+# cosmic_accent_softness = 0.42    # mix accent toward wallpaper bg
+# cosmic_accent_desaturate = 0.22
+
 perceptual_hash_threshold = 14
 hash_size = 8
 hash_consensus_slack = 4
