@@ -63,6 +63,11 @@ class OpsConfig:
     enable_homeassistant: bool = True
     enable_steam_theme: bool = False
     enable_cosmic_theme: bool = True
+    enable_pywalfox: bool = True
+    pywalfox_improve_contrast: bool = True
+    pywalfox_text_contrast: float = 7.0
+    pywalfox_icon_contrast: float = 4.5
+    pywalfox_control_contrast: float = 4.5
     # accent | surfaces | full — see theme/cosmic.py
     cosmic_theme_mode: str = "surfaces"
     # Reuse rgb strategy names, or set explicitly

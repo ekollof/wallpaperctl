@@ -18,6 +18,7 @@ dynamic_icons = false
 homeassistant = true
 steam_theme = false
 cosmic_theme = true
+pywalfox = true
 
 [wallust]
 # mapped via flat keys below for simplicity — use top-level too
@@ -43,6 +44,12 @@ wallpaper_dir = "~/Wallpapers"
 # cosmic_accent_strategy = "warmest"
 # cosmic_accent_softness = 0.42    # mix accent toward wallpaper bg
 # cosmic_accent_desaturate = 0.22
+
+# Pywalfox (Firefox) — boost colors.json contrast then pywalfox update
+# pywalfox_improve_contrast = true
+# pywalfox_text_contrast = 7.0     # tab titles / main text vs toolbar
+# pywalfox_icon_contrast = 3.5     # mid accents / icons
+# pywalfox_control_contrast = 3.5
 
 perceptual_hash_threshold = 14
 hash_size = 8

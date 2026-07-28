@@ -18,6 +18,7 @@ from wallpaperctl.theme.homeassistant import HomeassistantOp
 from wallpaperctl.theme.notifications import NotificationsOp
 from wallpaperctl.theme.nwg_look import NwgLookOp
 from wallpaperctl.theme.openrgb import OpenrgbOp
+from wallpaperctl.theme.pywalfox import PywalfoxOp
 from wallpaperctl.theme.steam import SteamOp
 from wallpaperctl.theme.wallust import WallustOp
 from wallpaperctl.theme.window_manager import WindowManagerOp
@@ -28,6 +29,7 @@ log = logging.getLogger("wallpaperctl")
 THEME_OPS = [
     WallustOp(),
     CosmicThemeOp(),  # needs wallust colors; COSMIC v2 hex accent files
+    PywalfoxOp(),  # contrast-boost colors.json + pywalfox update
     XresourcesOp(),
     NwgLookOp(),
     NotificationsOp(),

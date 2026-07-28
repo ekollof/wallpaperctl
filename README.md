@@ -206,17 +206,18 @@ Optional: `~/.config/hass.cfg` (`[auth]` with `server=`, `token=`, `lamp=`).
 
 1. wallust  
 2. cosmic-theme (COSMIC DE: soft accent + optional surfaces; not full neon recolor)  
-3. xresources (`xrdb -merge`)  
-4. nwg-look  
-5. notifications (dunst / mako + waybar)  
-6. openrgb  
-7. emacs (`emacs-daemon`)  
-8. window-manager signals (`xsetroot`, xsettingsd, awesome)  
-9. gtk-theme  
-10. cinnamon-theme (dynamic CSS/WM theme)  
-11. dynamic-icons  
-12. homeassistant  
-13. steam-theme (stub / disabled, same as shell)
+3. pywalfox (boost `colors.json` contrast for Firefox controls, then `pywalfox update`)  
+4. xresources (`xrdb -merge`)  
+5. nwg-look  
+6. notifications (dunst / mako + waybar)  
+7. openrgb  
+8. emacs (`emacs-daemon`)  
+9. window-manager signals (`xsetroot`, xsettingsd, awesome)  
+10. gtk-theme  
+11. cinnamon-theme (dynamic CSS/WM theme)  
+12. dynamic-icons  
+13. homeassistant  
+14. steam-theme (stub / disabled, same as shell)
 
 Wallpaper setters run **before** theme ops.
 
