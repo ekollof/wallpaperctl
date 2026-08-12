@@ -22,6 +22,10 @@ class EmacsOp:
             debug_op(self.name, "emacs server not running", ctx)
             return True
         theme = ctx.ops.emacs_theme
-        expr = f"(progn (ewal-load-colors) (load-theme '{theme} t))"
+        expr = (
+            "(progn (ewal-load-colors)"
+            f" (load-theme '{theme} t)"
+            " (when (fboundp 'ekollof/refresh-chrome) (ekollof/refresh-chrome)))"
+        )
         r = run(["emacs-daemon", "-e", expr], timeout=30)
         return r.returncode == 0
