@@ -15,6 +15,20 @@ class ToolReport:
     present: dict[str, bool] = field(default_factory=dict)
 
 
+def _openlinkhub_reachable(url: str = "http://127.0.0.1:27003") -> bool:
+    """True if OpenLinkHub's local REST API answers on the default port."""
+    try:
+        import httpx
+    except ImportError:
+        return False
+    try:
+        with httpx.Client(timeout=1.0) as client:
+            resp = client.get(f"{url.rstrip('/')}/api/")
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
 def detect_tools(de: DesktopEnvironment, *, strict: bool = False) -> ToolReport:
     report = ToolReport()
 
@@ -82,6 +96,14 @@ def detect_tools(de: DesktopEnvironment, *, strict: bool = False) -> ToolReport:
         report.present[cmd] = ok
         if not ok:
             report.warnings.append(f"{cmd} not found: {msg}")
+
+    # OpenLinkHub is a local HTTP daemon, not a CLI tool
+    olh_ok = _openlinkhub_reachable()
+    report.present["openlinkhub"] = olh_ok
+    if not olh_ok:
+        report.warnings.append(
+            "openlinkhub not reachable at http://127.0.0.1:27003: Corsair RGB via OpenLinkHub skipped"
+        )
 
     if strict and report.missing_required:
         raise SystemExit(

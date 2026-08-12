@@ -17,6 +17,7 @@ from wallpaperctl.theme.gtk_theme import GtkThemeOp
 from wallpaperctl.theme.homeassistant import HomeassistantOp
 from wallpaperctl.theme.notifications import NotificationsOp
 from wallpaperctl.theme.nwg_look import NwgLookOp
+from wallpaperctl.theme.openlinkhub import OpenlinkhubOp
 from wallpaperctl.theme.openrgb import OpenrgbOp
 from wallpaperctl.theme.pywalfox import PywalfoxOp
 from wallpaperctl.theme.steam import SteamOp
@@ -34,6 +35,7 @@ THEME_OPS = [
     NwgLookOp(),
     NotificationsOp(),
     OpenrgbOp(),
+    OpenlinkhubOp(),  # Corsair via local OpenLinkHub REST (same palette as openrgb)
     EmacsOp(),
     WindowManagerOp(),
     GtkThemeOp(),
@@ -53,6 +55,8 @@ def _timeout_for(op_name: str, ctx: WallpaperContext) -> float:
         return float(ctx.ops.wallust_timeout)
     if op_name == "openrgb":
         return float(ctx.ops.openrgb_timeout)
+    if op_name == "openlinkhub":
+        return float(ctx.ops.openlinkhub_timeout)
     return float(ctx.ops.operation_timeout)
 
 

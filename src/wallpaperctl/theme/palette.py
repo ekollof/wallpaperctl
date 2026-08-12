@@ -67,3 +67,20 @@ def color_at_line(line: int, colors_file: Path | None = None) -> str | None:
     if not c.startswith("#"):
         c = f"#{c}"
     return c
+
+
+def pick_theme_color(
+    strategy: str,
+    *,
+    fixed_line: int,
+    colors_file: Path | None = None,
+) -> tuple[str | None, int]:
+    """Resolve a wallust palette color the same way OpenRGB / HA / OpenLinkHub do.
+
+    Returns ``(hex_color_or_None, 1-based palette line)``.
+    """
+    if strategy == "fixed":
+        line = fixed_line
+    else:
+        line = select_palette_line(strategy, colors_file)
+    return color_at_line(line, colors_file), line

@@ -23,6 +23,9 @@ continue_on_error = true
 # operation_timeout = 30
 # wallust_timeout = 10
 # openrgb_timeout = 5
+# openlinkhub_url = "http://127.0.0.1:27003"
+# openlinkhub_timeout = 5.0
+# openlinkhub_brightness = 1.0
 # max_retries = 3
 # retry_delay = 1.0
 
@@ -32,6 +35,7 @@ xresources = true
 gtk_theme = true
 notifications = true
 openrgb = true
+openlinkhub = true
 emacs = true
 window_manager = true
 nwg_look = true

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from wallpaperctl.context import WallpaperContext
 from wallpaperctl.theme.base import debug_op
-from wallpaperctl.theme.palette import color_at_line, select_palette_line
+from wallpaperctl.theme.palette import pick_theme_color
 from wallpaperctl.util import have, run
 
 
@@ -24,11 +24,7 @@ class OpenrgbOp:
             if ctx.de.plasma
             else ctx.ops.openrgb_color_line_standalone
         )
-        if strategy == "fixed":
-            line = fixed
-        else:
-            line = select_palette_line(strategy)
-        color = color_at_line(line)
+        color, line = pick_theme_color(strategy, fixed_line=fixed)
         if not color:
             debug_op(self.name, f"no color at line {line}", ctx)
             return False

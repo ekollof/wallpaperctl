@@ -16,7 +16,7 @@ system (`~/bin/wallpaper` + `wallpaper.d`). It:
 
 1. Picks or fetches wallpapers (local library / Unsplash / Pexels / Pixabay)
 2. Sets the desktop background for the active DE/compositor
-3. Runs ordered theme operations (wallust palette, GTK, notifications, OpenRGB, …)
+3. Runs ordered theme operations (wallust palette, GTK, notifications, OpenRGB, OpenLinkHub, …)
 
 **Platforms:** Linux, OpenBSD, FreeBSD.  
 **Layout:** `src/wallpaperctl/` (src layout), tests under `tests/`, packaging via

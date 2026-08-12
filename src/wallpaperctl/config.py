@@ -55,6 +55,7 @@ class OpsConfig:
     enable_gtk_theme: bool = True
     enable_notifications: bool = True
     enable_openrgb: bool = True
+    enable_openlinkhub: bool = True
     enable_emacs: bool = True
     enable_window_manager: bool = True
     enable_nwg_look: bool = True
@@ -87,6 +88,11 @@ class OpsConfig:
     rgb_color_strategy: str = "warmest"
     openrgb_color_line_plasma: int = 3
     openrgb_color_line_standalone: int = 5
+
+    # OpenLinkHub (local Corsair RGB daemon, http://127.0.0.1:27003)
+    openlinkhub_url: str = "http://127.0.0.1:27003"
+    openlinkhub_timeout: float = 5.0
+    openlinkhub_brightness: float = 1.0
 
     emacs_theme: str = "ewal-doom-one"
     wallpaper_scaling_cinnamon: str = "scaled"
@@ -156,6 +162,7 @@ class OpsConfig:
             self.enable_openrgb = False
         if os.environ.get("MINIMAL_MODE") == "1":
             self.enable_openrgb = False
+            self.enable_openlinkhub = False
             self.enable_emacs = False
             self.enable_nwg_look = False
 

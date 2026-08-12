@@ -211,13 +211,14 @@ Optional: `~/.config/hass.cfg` (`[auth]` with `server=`, `token=`, `lamp=`).
 5. nwg-look  
 6. notifications (dunst / mako + waybar)  
 7. openrgb  
-8. emacs (`emacs-daemon`)  
-9. window-manager signals (`xsetroot`, xsettingsd, awesome)  
-10. gtk-theme  
-11. cinnamon-theme (dynamic CSS/WM theme)  
-12. dynamic-icons  
-13. homeassistant  
-14. steam-theme (stub / disabled, same as shell)
+8. openlinkhub (local OpenLinkHub REST — same palette color as openrgb; soft-skip if not running)  
+9. emacs (`emacs-daemon`)  
+10. window-manager signals (`xsetroot`, xsettingsd, awesome)  
+11. gtk-theme  
+12. cinnamon-theme (dynamic CSS/WM theme)  
+13. dynamic-icons  
+14. homeassistant  
+15. steam-theme (stub / disabled, same as shell)
 
 Wallpaper setters run **before** theme ops.
 
@@ -229,7 +230,7 @@ Required for full functionality (soft-deps skip when missing):
 - Fetch: network (httpx; no curl/ImageMagick required)
 - Session D-Bus: **jeepney** (Plasma wallpaper, notifications, portal/kded hooks — no `dbus-send`/`notify-send`)
 - DE tools only where the DE has no bus API: `hyprctl`, `qs`, `xfconf-query`, `gsettings`
-- Theme: `wallust`, `xrdb`, `nwg-look`, `dunst`/`mako`, `openrgb`, …
+- Theme: `wallust`, `xrdb`, `nwg-look`, `dunst`/`mako`, `openrgb`, OpenLinkHub (local HTTP), …
 - Fallback setters: `feh`, `nitrogen`, …
 
 ## State files
