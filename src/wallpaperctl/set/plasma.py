@@ -80,6 +80,12 @@ class PlasmaSetter:
         uri = path.as_uri()
         uri_js = uri.replace("\\", "\\\\").replace('"', '\\"')
         plugin = WALLPAPER_PLUGIN
+        animated_config = ""
+        if ctx.is_animated:
+            animated_config = """
+    d.writeConfig("FillMode", 1);
+    d.writeConfig("Color", "#000000");
+    d.writeConfig("Blur", false);"""
         js = f"""
 var allDesktops = desktops();
 print(allDesktops);
@@ -89,6 +95,7 @@ for (i = 0; i < allDesktops.length; i++) {{
     d.currentConfigGroup = Array("Wallpaper", "{plugin}", "General");
     d.writeConfig("Image", "{uri_js}");
     d.writeConfig("PreviewImage", "{uri_js}");
+    {animated_config}
 }}
 """
         ok, err = dbus_call(

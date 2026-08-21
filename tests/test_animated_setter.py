@@ -34,7 +34,39 @@ def test_mpvpaper_uses_all_outputs_and_ipc_socket(tmp_path: Path) -> None:
     args = popen.call_args.args[0]
     assert args[0] == "mpvpaper"
     assert "ALL" in args
-    assert "input-ipc-server=" in args[args.index("--mpv-options") + 1]
+    assert args[args.index("--layer") + 1] == "background"
+    mpv_options = args[args.index("--mpv-options") + 1]
+    assert "input-ipc-server=" in mpv_options
+    assert "panscan=0" in mpv_options
+    assert "background=color" in mpv_options
+    assert "background-color=#000000" in mpv_options
+
+
+def test_mpvpaper_supports_plasma_wayland() -> None:
+    assert AnimatedSetter._wayland_supported(
+        WallpaperContext(Path("wall.mp4"), DesktopEnvironment(plasma=True), OpsConfig())
+    )
+    assert not AnimatedSetter._wayland_supported(
+        WallpaperContext(Path("wall.mp4"), DesktopEnvironment(noctalia=True), OpsConfig())
+    )
+
+
+def test_plasma_mpvpaper_uses_bottom_layer(tmp_path: Path) -> None:
+    setter = AnimatedSetter()
+    ctx = WallpaperContext(
+        tmp_path / "wall.mp4", DesktopEnvironment(plasma=True), OpsConfig()
+    )
+    ctx.path.write_bytes(b"video")
+    fake = type("Process", (), {"pid": 1234, "poll": lambda self: None})()
+    with (
+        patch("wallpaperctl.set.animated.have", return_value=True),
+        patch("wallpaperctl.set.animated.subprocess.Popen", return_value=fake) as popen,
+        patch.object(setter, "_stop_previous"),
+        patch("wallpaperctl.set.plasma.jeepney_available", return_value=False),
+    ):
+        assert setter.set_wallpaper(ctx)
+    args = popen.call_args.args[0]
+    assert args[args.index("--layer") + 1] == "bottom"
 
 
 def test_x11_uses_xwinwrap_and_mpv(tmp_path: Path) -> None:
@@ -54,6 +86,8 @@ def test_x11_uses_xwinwrap_and_mpv(tmp_path: Path) -> None:
     assert "-ni" in args
     assert args[args.index("--") + 1] == "mpv"
     assert "%WID" in args
+    assert "--panscan=0" in args
+    assert "--background=color" in args
 
 
 def test_x11_starts_one_wrapper_per_output(tmp_path: Path) -> None:
@@ -87,6 +121,7 @@ def test_static_cleanup_discovers_untracked_xwinwrap() -> None:
     setter = AnimatedSetter()
     with (
         patch("wallpaperctl.set.animated.have", return_value=True),
+        patch.object(setter, "_socket", Path("/nonexistent/wallpaperctl.sock")),
         patch(
             "wallpaperctl.set.animated.run",
             return_value=type("Result", (), {"returncode": 0, "stdout": "2001\n"})(),
@@ -95,3 +130,22 @@ def test_static_cleanup_discovers_untracked_xwinwrap() -> None:
     ):
         setter._stop_previous()
     assert call(2001) in terminate.call_args_list
+
+
+def test_cleanup_discovers_untracked_mpvpaper() -> None:
+    setter = AnimatedSetter()
+    with (
+        patch("wallpaperctl.set.animated.have", return_value=True),
+        patch.object(setter, "_socket", Path("/nonexistent/wallpaperctl.sock")),
+        patch(
+            "wallpaperctl.set.animated.run",
+            side_effect=[
+                type("Result", (), {"returncode": 1, "stdout": ""})(),
+                type("Result", (), {"returncode": 0, "stdout": "3001\n3002\n"})(),
+            ],
+        ),
+        patch.object(setter, "_terminate") as terminate,
+    ):
+        setter._stop_previous()
+    assert call(3001) in terminate.call_args_list
+    assert call(3002) in terminate.call_args_list

@@ -39,24 +39,33 @@ class AnimatedSetter:
 
     @staticmethod
     def _wayland_supported(ctx: WallpaperContext) -> bool:
-        return not (ctx.de.plasma or ctx.de.cosmic or ctx.de.noctalia)
+        # KWin supports the layer-shell protocol used by mpvpaper. Noctalia and
+        # COSMIC own their wallpaper surfaces, so avoid competing with them.
+        return not (ctx.de.cosmic or ctx.de.noctalia)
 
     def _set_mpvpaper(self, ctx: WallpaperContext) -> bool:
         if not have("mpvpaper") or not have("mpv"):
             debug_set(self.name, "mpvpaper or mpv not found", ctx)
             return False
         self._stop_previous()
+        if ctx.de.plasma:
+            # mpvpaper may leave aspect-ratio margins transparent; replace any
+            # previous Plasma image before starting the animated layer.
+            from wallpaperctl.set.plasma import PlasmaSetter
+
+            PlasmaSetter().set_wallpaper(ctx)
+        layer = "bottom" if ctx.de.plasma else "background"
         try:
             self._state_dir.mkdir(parents=True, exist_ok=True)
             self._socket.unlink(missing_ok=True)
             process = subprocess.Popen(
                 [
                     "mpvpaper",
-                    "--auto-stop",
-                    "--auto-mode",
-                    "FULL",
+                    "--layer",
+                    layer,
                     "--mpv-options",
-                    f"no-audio loop input-ipc-server={self._socket}",
+                    f"no-audio loop panscan=0 background=color "
+                    f"background-color=#000000 input-ipc-server={self._socket}",
                     "ALL",
                     str(ctx.path),
                 ],
@@ -104,6 +113,9 @@ class AnimatedSetter:
                         "--really-quiet",
                         "--framedrop=vo",
                         "--no-audio",
+                        "--panscan=0",
+                        "--background=color",
+                        "--background-color=#000000",
                         "--loop-file=inf",
                         str(ctx.path),
                     ],
@@ -159,9 +171,10 @@ class AnimatedSetter:
         except (OSError, ValueError):
             pass
         if have("pgrep"):
-            result = run(["pgrep", "-f", r"xwinwrap.*mpv.*%WID"], timeout=5)
-            if result.returncode == 0:
-                pids.update(int(line) for line in result.stdout.split() if line.isdigit())
+            for pattern in (r"xwinwrap.*mpv.*%WID", r"mpvpaper .*--mpv-options"):
+                result = run(["pgrep", "-f", pattern], timeout=5)
+                if result.returncode == 0:
+                    pids.update(int(line) for line in result.stdout.split() if line.isdigit())
         for pid in pids:
             self._terminate(pid)
         try:
