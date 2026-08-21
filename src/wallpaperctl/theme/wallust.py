@@ -32,7 +32,7 @@ class WallustOp:
                 backend,
                 "--palette",
                 palette,
-                str(ctx.path),
+                str(ctx.image_path),
             ],
             timeout=ctx.ops.wallust_timeout,
         )

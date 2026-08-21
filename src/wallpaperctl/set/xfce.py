@@ -33,7 +33,7 @@ class XfceSetter:
         return ctx.de.xfce
 
     def set_wallpaper(self, ctx: WallpaperContext) -> bool:
-        path = str(ctx.path.resolve())
+        path = str(ctx.image_path.resolve())
         if not have("xfconf-query"):
             debug_set(self.name, "xfconf-query not found", ctx)
             return False

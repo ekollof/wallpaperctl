@@ -292,7 +292,7 @@ class CosmicSetter:
         return (home() / ".config/cosmic" / _CONFIG_DIR).is_dir()
 
     def set_wallpaper(self, ctx: WallpaperContext) -> bool:
-        path = ctx.path.resolve()
+        path = ctx.image_path.resolve()
         # Theme op will call sync again; only reload greeter once at end of
         # theme when that op is enabled.
         theme_next = bool(getattr(ctx.ops, "enable_cosmic_theme", True))

@@ -164,7 +164,7 @@ class CinnamonThemeOp:
             return True
 
         scaling = ctx.ops.wallpaper_scaling_cinnamon
-        uri = ctx.path.resolve().as_uri()
+        uri = ctx.image_path.resolve().as_uri()
         run(
             ["gsettings", "set", "org.cinnamon.desktop.background", "picture-uri", uri],
             timeout=10,

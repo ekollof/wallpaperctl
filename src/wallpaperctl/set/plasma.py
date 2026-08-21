@@ -29,7 +29,7 @@ class PlasmaSetter:
         return ctx.de.plasma
 
     def set_wallpaper(self, ctx: WallpaperContext) -> bool:
-        path = ctx.path.resolve()
+        path = ctx.image_path.resolve()
         if not path.is_file():
             debug_set(self.name, f"file not found: {path}", ctx)
             return False

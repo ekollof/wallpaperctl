@@ -18,7 +18,7 @@ class HyprlandSetter:
         return ctx.de.hyprland and not ctx.de.noctalia
 
     def set_wallpaper(self, ctx: WallpaperContext) -> bool:
-        path = ctx.path.resolve()
+        path = ctx.image_path.resolve()
         if not path.is_file():
             return False
         if not have("hyprctl"):

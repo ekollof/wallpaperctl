@@ -6,6 +6,7 @@ import logging
 import sys
 
 from wallpaperctl.context import WallpaperContext
+from wallpaperctl.set.animated import AnimatedSetter
 from wallpaperctl.set.cinnamon import CinnamonSetter
 from wallpaperctl.set.cosmic import CosmicSetter
 from wallpaperctl.set.fallback import FallbackSetter
@@ -17,6 +18,7 @@ from wallpaperctl.set.xfce import XfceSetter
 log = logging.getLogger("wallpaperctl")
 
 SETTERS = [
+    AnimatedSetter(),
     PlasmaSetter(),
     CosmicSetter(),
     NoctaliaSetter(),  # before hyprland so noctalia wins when both apply
@@ -29,6 +31,8 @@ SETTERS = [
 
 def run_wallpaper_setters(ctx: WallpaperContext) -> tuple[int, int]:
     """Returns (succeeded, attempted)."""
+    if not ctx.is_animated:
+        AnimatedSetter.stop_active()
     succeeded = 0
     attempted = 0
     for setter in SETTERS:
@@ -44,6 +48,8 @@ def run_wallpaper_setters(ctx: WallpaperContext) -> tuple[int, int]:
         if ok:
             succeeded += 1
             log.debug("Setter %s ok", setter.name)
+            if setter.name == "animated":
+                break
         else:
             print(f"Warning: Wallpaper operation {setter.name} failed", file=sys.stderr)
     return succeeded, attempted

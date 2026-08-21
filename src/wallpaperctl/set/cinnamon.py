@@ -19,7 +19,7 @@ class CinnamonSetter:
         return ctx.de.cinnamon
 
     def set_wallpaper(self, ctx: WallpaperContext) -> bool:
-        path = ctx.path.resolve()
+        path = ctx.image_path.resolve()
         if not have("gsettings"):
             debug_set(self.name, "gsettings not found", ctx)
             return False

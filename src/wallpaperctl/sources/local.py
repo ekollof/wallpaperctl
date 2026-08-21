@@ -7,6 +7,7 @@ import random
 from pathlib import Path
 
 from wallpaperctl.config import OpsConfig
+from wallpaperctl.media import ANIMATED_SUFFIXES
 from wallpaperctl.util import home
 
 log = logging.getLogger("wallpaperctl")
@@ -54,12 +55,24 @@ def list_wallpaper_files(directory: Path) -> list[Path]:
     return files
 
 
-def pick_random_wallpaper(ops: OpsConfig | None = None) -> Path:
+def pick_random_wallpaper(
+    ops: OpsConfig | None = None, *, include_animated: bool = False
+) -> Path:
     directory = wallpaper_dir(ops)
     if not directory.is_dir():
         raise SystemExit(f"Error: Wallpaper directory '{directory}' not found!")
-    files = list_wallpaper_files(directory)
+    if include_animated:
+        animated_dir = directory / "animated"
+        files = [
+            p
+            for p in animated_dir.rglob("*")
+            if p.is_file() and p.suffix.lower() in ANIMATED_SUFFIXES
+        ] if animated_dir.is_dir() else []
+    else:
+        files = list_wallpaper_files(directory)
     if not files:
+        if include_animated:
+            raise SystemExit(f"Error: No animated wallpapers found in '{animated_dir}'!")
         raise SystemExit(f"Error: No wallpapers found in '{directory}'!")
     choice = random.choice(files)
     log.debug("Picked local wallpaper: %s", choice)

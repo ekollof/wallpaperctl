@@ -9,6 +9,7 @@ from pathlib import Path
 from wallpaperctl.config import OpsConfig
 from wallpaperctl.context import WallpaperContext
 from wallpaperctl.detect.desktop import detect_desktop
+from wallpaperctl.media import extract_frame, is_animated
 from wallpaperctl.notify import safe_notify
 from wallpaperctl.set.runner import run_wallpaper_setters
 from wallpaperctl.theme.runner import run_theme_ops
@@ -60,10 +61,12 @@ def apply_wallpaper(
         is_cinnamon=de.cinnamon,
     )
 
+    static_path = extract_frame(path, ops) if is_animated(path) else path
     ctx = WallpaperContext(
         path=path.resolve(),
         de=de,
         ops=ops,
+        static_path=static_path,
         photographer_name=photographer_name,
         photographer_username=photographer_username,
         provider_name=provider_name,

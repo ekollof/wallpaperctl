@@ -40,6 +40,30 @@ def test_pick_random_wallpaper_from_nested(tmp_path: Path, monkeypatch: pytest.M
     assert "nested" in picked.parts
 
 
+def test_pick_random_wallpaper_can_include_animated(tmp_path: Path) -> None:
+    _touch(tmp_path / "still.jpg")
+    video = _touch(tmp_path / "animated" / "motion.mp4")
+    ops = OpsConfig()
+    ops.wallpaper_dir = str(tmp_path)
+    found = __import__("wallpaperctl.sources.local", fromlist=["pick_random_wallpaper"])
+    choices = found.list_wallpaper_files(tmp_path)
+    assert video not in choices
+    picked = found.pick_random_wallpaper(ops, include_animated=True)
+    assert picked == video
+
+
+def test_animated_selection_ignores_still_library(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for index in range(20):
+        _touch(tmp_path / f"still-{index}.jpg")
+    video = _touch(tmp_path / "animated" / "motion.mp4")
+    ops = OpsConfig()
+    ops.wallpaper_dir = str(tmp_path)
+    monkeypatch.setattr("wallpaperctl.sources.local.random.choice", lambda choices: choices[0])
+    assert pick_random_wallpaper(ops, include_animated=True) == video
+
+
 def test_pick_random_wallpaper_empty(tmp_path: Path) -> None:
     ops = OpsConfig()
     ops.wallpaper_dir = str(tmp_path)

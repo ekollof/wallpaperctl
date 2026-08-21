@@ -22,9 +22,6 @@ from wallpaperctl.theme.runner import list_ops
 from wallpaperctl.util import ensure_debug_logging, have, run
 
 
-
-
-
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
@@ -83,6 +80,11 @@ def _classic_main(argv: list[str]) -> int:
         help="Open Textual wallpaper manager TUI (same as: manage)",
     )
     parser.add_argument(
+        "--animated",
+        action="store_true",
+        help="Pick a random animated wallpaper from ~/Wallpapers/animated",
+    )
+    parser.add_argument(
         "-c",
         dest="categories",
         metavar="categories",
@@ -99,6 +101,9 @@ def _classic_main(argv: list[str]) -> int:
         version=f"wallpaperctl {__version__}",
     )
     args = parser.parse_args(argv)
+
+    if args.animated and args.r:
+        parser.error("--animated cannot be combined with -r (remote fetch)")
 
     debug = bool(os.environ.get("DEBUG"))
     ensure_debug_logging(debug)
@@ -130,6 +135,7 @@ def _classic_main(argv: list[str]) -> int:
             path=args.path,
             ops=ops,
             debug=debug,
+            animated=args.animated,
         )
     finally:
         lock.release()
@@ -143,6 +149,7 @@ def _run_action(
     path: str | None,
     ops,
     debug: bool,
+    animated: bool = False,
 ) -> int:
     photographer_name = ""
     photographer_username = ""
@@ -213,7 +220,8 @@ def _run_action(
         wallpaper = Path(path).expanduser()
     else:
         print(f"Picking random wallpaper from {ops.path('wallpaper_dir')}...")
-        wallpaper = pick_random_wallpaper(ops)
+        wallpaper = pick_random_wallpaper(ops, include_animated=animated)
+        print(f"Selected wallpaper: {wallpaper.name}")
 
     assert wallpaper is not None
     if not wallpaper.is_file():
@@ -249,7 +257,12 @@ def _subcommand_main(argv: list[str]) -> int:
     p_set = sub.add_parser("set", help="Set a specific wallpaper")
     p_set.add_argument("path")
 
-    sub.add_parser("random", help="Pick random local wallpaper")
+    p_random = sub.add_parser("random", help="Pick random local wallpaper")
+    p_random.add_argument(
+        "--animated",
+        action="store_true",
+        help="Pick only from ~/Wallpapers/animated",
+    )
 
     p_fetch = sub.add_parser("fetch", help="Fetch remote wallpaper")
     p_fetch.add_argument("-c", "--categories", default=None)
@@ -566,6 +579,7 @@ def _subcommand_main(argv: list[str]) -> int:
                 path=args.path,
                 ops=ops,
                 debug=debug,
+                animated=False,
             )
         if args.cmd == "random":
             return _run_action(
@@ -575,6 +589,7 @@ def _subcommand_main(argv: list[str]) -> int:
                 path=None,
                 ops=ops,
                 debug=debug,
+                animated=args.animated,
             )
         if args.cmd == "fetch":
             return _run_action(
@@ -584,6 +599,7 @@ def _subcommand_main(argv: list[str]) -> int:
                 path=None,
                 ops=ops,
                 debug=debug,
+                animated=False,
             )
         if args.cmd == "reload":
             return _run_action(

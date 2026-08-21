@@ -28,7 +28,7 @@ class FallbackSetter:
         return not (de.plasma or de.hyprland or de.xfce or de.cinnamon)
 
     def set_wallpaper(self, ctx: WallpaperContext) -> bool:
-        path = str(ctx.path.resolve())
+        path = str(ctx.image_path.resolve())
         for cmd, builder in SETTERS:
             if not have(cmd):
                 debug_set(self.name, f"{cmd} not found", ctx)

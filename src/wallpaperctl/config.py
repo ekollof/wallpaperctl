@@ -100,6 +100,8 @@ class OpsConfig:
 
     operation_timeout: int = 30
     wallust_timeout: int = 10
+    animated_frame_seconds: float = 3.0
+    animated_cache_dir: str = "~/.cache/wallpaperctl/animated"
     openrgb_timeout: int = 5
     max_retries: int = 3
     retry_delay: float = 1.0

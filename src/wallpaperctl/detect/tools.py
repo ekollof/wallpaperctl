@@ -83,6 +83,11 @@ def detect_tools(de: DesktopEnvironment, *, strict: bool = False) -> ToolReport:
             )
 
     soft = {
+        "ffmpeg": "animated frame extraction skipped",
+        "mpv": "animated playback skipped",
+        "mpvpaper": "Wayland animated playback skipped",
+        "socat": "animated playback control unavailable",
+        "xwinwrap": "X11 animated playback skipped",
         "wallust": "color scheme won't be updated",
         "openrgb": "RGB lighting skipped",
         "nwg-look": "GTK/xsettingsd reload skipped",
