@@ -112,9 +112,11 @@ def pick_accent(
     *desaturate* tames neon after softening.
     """
     bg = _ensure_hash(colors[0]) if colors else "#1B1B1B"
-    # Prefer palette strategy over fixed color4
-    line = select_palette_line(strategy)
-    raw = color_at_line(line)
+    # Prefer palette strategy over fixed color4. Score the palette the caller
+    # passed instead of re-reading the on-disk wal colors (keeps this pure and
+    # consistent with the rest of the theme generation).
+    line = select_palette_line(strategy, colors=colors)
+    raw = color_at_line(line, colors=colors)
     if not raw:
         raw = colors[4] if len(colors) > 4 else (colors[1] if len(colors) > 1 else "#888888")
     raw = _ensure_hash(raw)
