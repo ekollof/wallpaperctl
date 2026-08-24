@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from wallpaperctl.config import OpsConfig
 from wallpaperctl.media import extract_frame, is_animated
 
@@ -24,6 +26,7 @@ def test_extract_frame_returns_none_for_still_images(tmp_path: Path) -> None:
 def test_extract_frame_creates_black_placeholder_when_ffmpeg_fails(
     tmp_path: Path,
 ) -> None:
+    pytest.importorskip("PIL")
     video = tmp_path / "wall.mp4"
     video.write_bytes(b"video")
     cache = tmp_path / "cache"

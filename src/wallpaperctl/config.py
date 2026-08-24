@@ -9,10 +9,17 @@ from __future__ import annotations
 import logging
 import os
 import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import tomllib
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # Python 3.10
+    try:
+        import tomli as tomllib  # type: ignore[no-redef]
+    except ImportError:  # pragma: no cover
+        tomllib = None  # type: ignore[assignment]
 
 from wallpaperctl.util import home
 
@@ -226,7 +233,13 @@ def load_api_config(categories_override: str | None = None) -> ApiConfig:
         # Optional pure-Python config
         toml_path = home() / ".config" / "wallpaperctl" / "config.toml"
         if toml_path.is_file():
-            data = tomllib.loads(toml_path.read_text(encoding="utf-8"))
+            if tomllib is None:
+                log.warning(
+                    "Python 3.10 without tomli: skipping %s (pip install tomli)",
+                    toml_path,
+                )
+            else:
+                data = tomllib.loads(toml_path.read_text(encoding="utf-8"))
             api = data.get("api", data)
             cfg.unsplash_access_key = api.get("unsplash_access_key", cfg.unsplash_access_key)
             cfg.pexels_api_key = api.get("pexels_api_key", cfg.pexels_api_key)
@@ -242,6 +255,11 @@ def load_api_config(categories_override: str | None = None) -> ApiConfig:
 
 def load_ops_config() -> OpsConfig:
     cfg = OpsConfig()
+    if tomllib is None:
+        log.warning(
+            "Python 3.10 without tomli: skipping TOML config (pip install tomli)"
+        )
+        return cfg
     # Package defaults first, then user overrides
     sources: list[tuple[str, str]] = []
     defaults = Path(__file__).with_name("defaults.toml")

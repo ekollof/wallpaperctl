@@ -31,6 +31,7 @@ dependencies = [
   "imagehash>=4.3",
   "jeepney>=0.8",
   "textual>=0.80",
+  "tomli>=2.0; python_version < '3.11'",
 ]
 
 

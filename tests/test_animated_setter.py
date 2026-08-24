@@ -63,6 +63,7 @@ def test_plasma_mpvpaper_uses_bottom_layer(tmp_path: Path) -> None:
     ctx.path.write_bytes(b"video")
     fake = _fake_process(1234)
     with (
+        patch.dict(os.environ, {"WAYLAND_DISPLAY": "wayland-0"}, clear=False),
         patch("wallpaperctl.set.animated.have", return_value=True),
         patch("wallpaperctl.set.animated.subprocess.Popen", return_value=fake) as popen,
         patch.object(setter, "_stop_previous"),
