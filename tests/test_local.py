@@ -40,16 +40,13 @@ def test_pick_random_wallpaper_from_nested(tmp_path: Path, monkeypatch: pytest.M
     assert "nested" in picked.parts
 
 
-def test_pick_random_wallpaper_can_include_animated(tmp_path: Path) -> None:
+def test_animated_only_picks_from_animated_directory(tmp_path: Path) -> None:
     _touch(tmp_path / "still.jpg")
     video = _touch(tmp_path / "animated" / "motion.mp4")
     ops = OpsConfig()
     ops.wallpaper_dir = str(tmp_path)
-    found = __import__("wallpaperctl.sources.local", fromlist=["pick_random_wallpaper"])
-    choices = found.list_wallpaper_files(tmp_path)
-    assert video not in choices
-    picked = found.pick_random_wallpaper(ops, include_animated=True)
-    assert picked == video
+    assert video not in list_wallpaper_files(tmp_path)
+    assert pick_random_wallpaper(ops, animated_only=True) == video
 
 
 def test_animated_selection_ignores_still_library(
@@ -61,7 +58,15 @@ def test_animated_selection_ignores_still_library(
     ops = OpsConfig()
     ops.wallpaper_dir = str(tmp_path)
     monkeypatch.setattr("wallpaperctl.sources.local.random.choice", lambda choices: choices[0])
-    assert pick_random_wallpaper(ops, include_animated=True) == video
+    assert pick_random_wallpaper(ops, animated_only=True) == video
+
+
+def test_animated_only_errors_when_directory_empty(tmp_path: Path) -> None:
+    _touch(tmp_path / "still.jpg")
+    ops = OpsConfig()
+    ops.wallpaper_dir = str(tmp_path)
+    with pytest.raises(SystemExit, match="No animated wallpapers"):
+        pick_random_wallpaper(ops, animated_only=True)
 
 
 def test_pick_random_wallpaper_empty(tmp_path: Path) -> None:

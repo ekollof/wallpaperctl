@@ -21,6 +21,77 @@ PLASMA_PATH = "/PlasmaShell"
 PLASMA_IFACE = "org.kde.PlasmaShell"
 WALLPAPER_PLUGIN = "org.kde.image"
 
+# Animated wallpapers render with aspect-fit + black background on top of the
+# org.kde.image plugin. These settings must not leak into later static
+# wallpapers, so the previous values are saved once and restored on the next
+# static apply.
+_ANIMATED_OVERLAY_KEYS = ("FillMode", "Color", "Blur")
+_ANIMATED_OVERLAY_DEFAULTS = {"FillMode": "2", "Color": "#ffffff", "Blur": "false"}
+_ANIMATED_OVERLAY_STATE = Path("~/.cache/wallpaperctl/plasma-image-overlay")
+_IMAGE_SECTION_RE = re.compile(
+    r"^\[Containments\]\[\d+\]\[Wallpaper\]\[org\.kde\.image\]\[General\]\s*$"
+)
+
+
+def _appletsrc_path() -> Path:
+    return Path.home() / ".config" / "plasma-org.kde.plasma.desktop-appletsrc"
+
+
+def _current_image_settings(cfg: Path) -> dict[str, str]:
+    """First value per key under any containment's org.kde.image group."""
+    values: dict[str, str] = {}
+    try:
+        lines = cfg.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return values
+    in_section = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("["):
+            in_section = bool(_IMAGE_SECTION_RE.match(stripped))
+            continue
+        if in_section and "=" in stripped:
+            key, _, value = stripped.partition("=")
+            values.setdefault(key.strip(), value.strip())
+    return values
+
+
+def _save_animated_overlay_settings() -> None:
+    """Remember pre-animated org.kde.image settings (once per animated run)."""
+    if _ANIMATED_OVERLAY_STATE.exists():
+        return
+    current = _current_image_settings(_appletsrc_path())
+    lines = [
+        f"{key}={current.get(key, _ANIMATED_OVERLAY_DEFAULTS[key])}"
+        for key in _ANIMATED_OVERLAY_KEYS
+    ]
+    try:
+        _ANIMATED_OVERLAY_STATE.parent.mkdir(parents=True, exist_ok=True)
+        _ANIMATED_OVERLAY_STATE.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except OSError as e:
+        log.debug("Could not save Plasma overlay settings: %s", e)
+
+
+def _restore_animated_overlay_js() -> str:
+    """JS restoring pre-animated settings; empty when nothing was saved."""
+    try:
+        text = _ANIMATED_OVERLAY_STATE.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    saved = dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
+    if not any(key in saved for key in _ANIMATED_OVERLAY_KEYS):
+        return ""
+    js = "".join(
+        f'\n    d.writeConfig("{key}", "{saved[key]}");'
+        for key in _ANIMATED_OVERLAY_KEYS
+        if key in saved
+    )
+    try:
+        _ANIMATED_OVERLAY_STATE.unlink(missing_ok=True)
+    except OSError as e:
+        log.debug("Could not clear Plasma overlay state: %s", e)
+    return js
+
 
 class PlasmaSetter:
     name = "plasma"
@@ -80,22 +151,23 @@ class PlasmaSetter:
         uri = path.as_uri()
         uri_js = uri.replace("\\", "\\\\").replace('"', '\\"')
         plugin = WALLPAPER_PLUGIN
-        animated_config = ""
         if ctx.is_animated:
-            animated_config = """
-    d.writeConfig("FillMode", 1);
-    d.writeConfig("Color", "#000000");
-    d.writeConfig("Blur", false);"""
+            _save_animated_overlay_settings()
+            overlay_js = (
+                '\n    d.writeConfig("FillMode", 1);'
+                '\n    d.writeConfig("Color", "#000000");'
+                "\n    d.writeConfig(\"Blur\", false);"
+            )
+        else:
+            overlay_js = _restore_animated_overlay_js()
         js = f"""
 var allDesktops = desktops();
-print(allDesktops);
 for (i = 0; i < allDesktops.length; i++) {{
     d = allDesktops[i];
     d.wallpaperPlugin = "{plugin}";
     d.currentConfigGroup = Array("Wallpaper", "{plugin}", "General");
     d.writeConfig("Image", "{uri_js}");
-    d.writeConfig("PreviewImage", "{uri_js}");
-    {animated_config}
+    d.writeConfig("PreviewImage", "{uri_js}");{overlay_js}
 }}
 """
         ok, err = dbus_call(

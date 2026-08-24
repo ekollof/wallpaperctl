@@ -5,13 +5,35 @@ from __future__ import annotations
 import os
 import re
 import signal
+import stat
 import subprocess
 import time
 from pathlib import Path
 
 from wallpaperctl.context import WallpaperContext
 from wallpaperctl.set.base import debug_set
+from wallpaperctl.set.plasma import PlasmaSetter
 from wallpaperctl.util import have, run
+
+# Shared mpv playback options for both backends: aspect-preserving letterbox
+# with an opaque black background (never crop, never show what is underneath).
+_MPV_WALLPAPER_OPTIONS = [
+    "--no-audio",
+    "--loop-file=inf",
+    "--panscan=0",
+    "--background=color",
+    "--background-color=#000000",
+]
+# Cmdline patterns of wallpaperctl-launched players that may outlive their
+# pid file (crashed runs, manual restarts).
+_STALE_PROCESS_PATTERNS = (r"xwinwrap.*mpv.*%WID", r"mpvpaper .*--mpv-options")
+
+
+def _is_socket(path: Path) -> bool:
+    try:
+        return stat.S_ISSOCK(path.stat().st_mode)
+    except OSError:
+        return False
 
 
 class AnimatedSetter:
@@ -25,6 +47,7 @@ class AnimatedSetter:
 
     @classmethod
     def stop_active(cls) -> None:
+        """Stop any running animated playback (used before static setters)."""
         cls()._stop_previous()
 
     def set_wallpaper(self, ctx: WallpaperContext) -> bool:
@@ -49,12 +72,13 @@ class AnimatedSetter:
             return False
         self._stop_previous()
         if ctx.de.plasma:
-            # mpvpaper may leave aspect-ratio margins transparent; replace any
-            # previous Plasma image before starting the animated layer.
-            from wallpaperctl.set.plasma import PlasmaSetter
-
+            # mpvpaper leaves aspect-ratio margins transparent; refresh the
+            # Plasma image underneath (aspect-fit + black) before playback.
             PlasmaSetter().set_wallpaper(ctx)
         layer = "bottom" if ctx.de.plasma else "background"
+        mpv_options = " ".join(
+            [*_MPV_WALLPAPER_OPTIONS, f"--input-ipc-server={self._socket}"]
+        )
         try:
             self._state_dir.mkdir(parents=True, exist_ok=True)
             self._socket.unlink(missing_ok=True)
@@ -64,8 +88,7 @@ class AnimatedSetter:
                     "--layer",
                     layer,
                     "--mpv-options",
-                    f"no-audio loop panscan=0 background=color "
-                    f"background-color=#000000 input-ipc-server={self._socket}",
+                    mpv_options,
                     "ALL",
                     str(ctx.path),
                 ],
@@ -88,12 +111,10 @@ class AnimatedSetter:
 
     def _set_xwinwrap(self, ctx: WallpaperContext) -> bool:
         self._stop_previous()
-        geometries = self._x11_geometries()
         processes: list[subprocess.Popen] = []
         try:
             self._state_dir.mkdir(parents=True, exist_ok=True)
-            for geometry in geometries:
-                geometry_args = ["-g", geometry] if geometry != "-fs" else ["-fs"]
+            for geometry_args in self._x11_geometry_args():
                 process = subprocess.Popen(
                     [
                         "xwinwrap",
@@ -112,11 +133,7 @@ class AnimatedSetter:
                         "%WID",
                         "--really-quiet",
                         "--framedrop=vo",
-                        "--no-audio",
-                        "--panscan=0",
-                        "--background=color",
-                        "--background-color=#000000",
-                        "--loop-file=inf",
+                        *_MPV_WALLPAPER_OPTIONS,
                         str(ctx.path),
                     ],
                     stdin=subprocess.DEVNULL,
@@ -132,34 +149,30 @@ class AnimatedSetter:
                 "".join(f"{process.pid}\n" for process in processes),
                 encoding="utf-8",
             )
-        except OSError as e:
-            debug_set(self.name, f"xwinwrap start failed: {e}", ctx)
-            for process in processes:
-                self._terminate(process.pid)
-            return False
-        except RuntimeError as e:
+        except (OSError, RuntimeError) as e:
             self._pid_file.unlink(missing_ok=True)
             for process in processes:
                 self._terminate(process.pid)
-            debug_set(self.name, str(e), ctx)
+            debug_set(self.name, f"xwinwrap failed: {e}", ctx)
             return False
         debug_set(self.name, f"xwinwrap started for {len(processes)} output(s)", ctx)
         return True
 
     @staticmethod
-    def _x11_geometries() -> list[str]:
+    def _x11_geometry_args() -> list[list[str]]:
+        """Per-output xwinwrap geometry fragments; [["-fs"]] when unknown."""
         if not have("xrandr"):
-            return ["-fs"]
+            return [["-fs"]]
         result = run(["xrandr", "--query"], timeout=10)
         geometries = re.findall(
             r"^\S+ connected(?: primary)?\s+(\d+x\d+\+-?\d+\+-?\d+)",
             result.stdout or "",
             re.MULTILINE,
         )
-        return geometries or ["-fs"]
+        return [["-g", geometry] for geometry in geometries] or [["-fs"]]
 
     def _stop_previous(self) -> None:
-        if have("socat") and self._socket.is_socket():
+        if have("socat") and _is_socket(self._socket):
             run(["socat", "-", str(self._socket)], input_text="quit\n", timeout=2)
         pids: set[int] = set()
         try:
@@ -171,10 +184,12 @@ class AnimatedSetter:
         except (OSError, ValueError):
             pass
         if have("pgrep"):
-            for pattern in (r"xwinwrap.*mpv.*%WID", r"mpvpaper .*--mpv-options"):
+            for pattern in _STALE_PROCESS_PATTERNS:
                 result = run(["pgrep", "-f", pattern], timeout=5)
                 if result.returncode == 0:
-                    pids.update(int(line) for line in result.stdout.split() if line.isdigit())
+                    pids.update(
+                        int(line) for line in result.stdout.split() if line.isdigit()
+                    )
         for pid in pids:
             self._terminate(pid)
         try:

@@ -13,15 +13,27 @@ def test_is_animated_only_accepts_mp4() -> None:
     assert not is_animated(Path("wall.png"))
 
 
-def test_extract_frame_retries_at_video_start(tmp_path: Path) -> None:
+def test_extract_frame_returns_none_for_still_images(tmp_path: Path) -> None:
+    image = tmp_path / "wall.jpg"
+    image.write_bytes(b"jpg")
+    with patch("wallpaperctl.media.run") as run:
+        assert extract_frame(image, OpsConfig()) is None
+    run.assert_not_called()
+
+
+def test_extract_frame_creates_black_placeholder_when_ffmpeg_fails(
+    tmp_path: Path,
+) -> None:
     video = tmp_path / "wall.mp4"
     video.write_bytes(b"video")
     cache = tmp_path / "cache"
     ops = OpsConfig(animated_cache_dir=str(cache))
     with patch("wallpaperctl.media.run") as run:
-        first = extract_frame(video, ops)
-    assert first is None
+        frame = extract_frame(video, ops)
     assert run.call_count == 2
+    assert frame is not None
+    assert frame.is_file()
+    assert frame.stat().st_size > 0
 
 
 def test_extract_frame_falls_back_to_zero_when_offset_fails(tmp_path: Path) -> None:

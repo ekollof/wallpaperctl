@@ -20,10 +20,14 @@ def _ctx(tmp_path: Path, *, wayland: bool) -> WallpaperContext:
     return WallpaperContext(video, de, OpsConfig())
 
 
+def _fake_process(pid: int) -> object:
+    return type("Process", (), {"pid": pid, "poll": lambda self: None})()
+
+
 def test_mpvpaper_uses_all_outputs_and_ipc_socket(tmp_path: Path) -> None:
     setter = AnimatedSetter()
     ctx = _ctx(tmp_path, wayland=True)
-    fake = type("Process", (), {"pid": 1234, "poll": lambda self: None})()
+    fake = _fake_process(1234)
     with (
         patch.dict(os.environ, {"WAYLAND_DISPLAY": "wayland-1"}, clear=False),
         patch("wallpaperctl.set.animated.have", return_value=True),
@@ -57,7 +61,7 @@ def test_plasma_mpvpaper_uses_bottom_layer(tmp_path: Path) -> None:
         tmp_path / "wall.mp4", DesktopEnvironment(plasma=True), OpsConfig()
     )
     ctx.path.write_bytes(b"video")
-    fake = type("Process", (), {"pid": 1234, "poll": lambda self: None})()
+    fake = _fake_process(1234)
     with (
         patch("wallpaperctl.set.animated.have", return_value=True),
         patch("wallpaperctl.set.animated.subprocess.Popen", return_value=fake) as popen,
@@ -72,13 +76,13 @@ def test_plasma_mpvpaper_uses_bottom_layer(tmp_path: Path) -> None:
 def test_x11_uses_xwinwrap_and_mpv(tmp_path: Path) -> None:
     setter = AnimatedSetter()
     ctx = _ctx(tmp_path, wayland=False)
-    fake = type("Process", (), {"pid": 1234, "poll": lambda self: None})()
+    fake = _fake_process(1234)
     with (
         patch.dict(os.environ, {"DISPLAY": ":0", "WAYLAND_DISPLAY": ""}, clear=False),
         patch("wallpaperctl.set.animated.have", return_value=True),
         patch("wallpaperctl.set.animated.subprocess.Popen", return_value=fake) as popen,
         patch.object(setter, "_stop_previous"),
-        patch.object(setter, "_x11_geometries", return_value=["1920x1080+0+0"]),
+        patch.object(setter, "_x11_geometry_args", return_value=[["-g", "1920x1080+0+0"]]),
     ):
         assert setter.set_wallpaper(ctx)
     args = popen.call_args.args[0]
@@ -93,10 +97,7 @@ def test_x11_uses_xwinwrap_and_mpv(tmp_path: Path) -> None:
 def test_x11_starts_one_wrapper_per_output(tmp_path: Path) -> None:
     setter = AnimatedSetter()
     ctx = _ctx(tmp_path, wayland=False)
-    processes = [
-        type("Process", (), {"pid": pid, "poll": lambda self: None})()
-        for pid in (1001, 1002, 1003)
-    ]
+    processes = [_fake_process(pid) for pid in (1001, 1002, 1003)]
     with (
         patch.dict(os.environ, {"DISPLAY": ":0", "WAYLAND_DISPLAY": ""}, clear=False),
         patch("wallpaperctl.set.animated.have", return_value=True),
@@ -104,8 +105,12 @@ def test_x11_starts_one_wrapper_per_output(tmp_path: Path) -> None:
         patch.object(setter, "_stop_previous"),
         patch.object(
             setter,
-            "_x11_geometries",
-            return_value=["1920x1080+0+0", "2560x1080+1920+0", "1920x1080+4480+0"],
+            "_x11_geometry_args",
+            return_value=[["-g", g] for g in (
+                "1920x1080+0+0",
+                "2560x1080+1920+0",
+                "1920x1080+4480+0",
+            )],
         ),
     ):
         assert setter.set_wallpaper(ctx)

@@ -55,25 +55,32 @@ def list_wallpaper_files(directory: Path) -> list[Path]:
     return files
 
 
+def _list_animated_files(directory: Path) -> list[Path]:
+    """Collect animated files under *directory* recursively (skip hidden)."""
+    if not directory.is_dir():
+        return []
+    return [
+        p
+        for p in directory.rglob("*")
+        if p.is_file() and p.suffix.lower() in ANIMATED_SUFFIXES
+    ]
+
+
 def pick_random_wallpaper(
-    ops: OpsConfig | None = None, *, include_animated: bool = False
+    ops: OpsConfig | None = None, *, animated_only: bool = False
 ) -> Path:
     directory = wallpaper_dir(ops)
     if not directory.is_dir():
         raise SystemExit(f"Error: Wallpaper directory '{directory}' not found!")
-    if include_animated:
+    if animated_only:
         animated_dir = directory / "animated"
-        files = [
-            p
-            for p in animated_dir.rglob("*")
-            if p.is_file() and p.suffix.lower() in ANIMATED_SUFFIXES
-        ] if animated_dir.is_dir() else []
+        files = _list_animated_files(animated_dir)
+        if not files:
+            raise SystemExit(f"Error: No animated wallpapers found in '{animated_dir}'!")
     else:
         files = list_wallpaper_files(directory)
-    if not files:
-        if include_animated:
-            raise SystemExit(f"Error: No animated wallpapers found in '{animated_dir}'!")
-        raise SystemExit(f"Error: No wallpapers found in '{directory}'!")
+        if not files:
+            raise SystemExit(f"Error: No wallpapers found in '{directory}'!")
     choice = random.choice(files)
     log.debug("Picked local wallpaper: %s", choice)
     return choice

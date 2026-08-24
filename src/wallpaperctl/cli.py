@@ -220,7 +220,7 @@ def _run_action(
         wallpaper = Path(path).expanduser()
     else:
         print(f"Picking random wallpaper from {ops.path('wallpaper_dir')}...")
-        wallpaper = pick_random_wallpaper(ops, include_animated=animated)
+        wallpaper = pick_random_wallpaper(ops, animated_only=animated)
         print(f"Selected wallpaper: {wallpaper.name}")
 
     assert wallpaper is not None

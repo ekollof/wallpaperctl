@@ -7,6 +7,7 @@ from pathlib import Path
 
 from wallpaperctl.config import OpsConfig
 from wallpaperctl.detect.desktop import DesktopEnvironment
+from wallpaperctl.media import is_animated
 
 
 @dataclass
@@ -31,4 +32,5 @@ class WallpaperContext:
 
     @property
     def is_animated(self) -> bool:
-        return self.path.suffix.lower() == ".mp4"
+        """True when the primary wallpaper is a video."""
+        return is_animated(self.path)
