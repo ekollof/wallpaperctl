@@ -2,7 +2,6 @@
 """Generate an opencode theme from pywal/wallust colors.json."""
 
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -12,26 +11,70 @@ THEME_OUTPUT_PATH = Path.home() / ".config" / "opencode" / "themes" / "wallust.j
 
 def lighten(hex_color: str, factor: float = 0.15) -> str:
     """Lighten a hex color by mixing with white."""
-    hex_color = hex_color.lstrip("#")
-    r = int(hex_color[0:2], 16)
-    g = int(hex_color[2:4], 16)
-    b = int(hex_color[4:6], 16)
-    r = int(r + (255 - r) * factor)
-    g = int(g + (255 - g) * factor)
-    b = int(b + (255 - b) * factor)
-    return f"#{r:02x}{g:02x}{b:02x}"
+    return mix(hex_color, (255, 255, 255), factor)
 
 
 def darken(hex_color: str, factor: float = 0.15) -> str:
     """Darken a hex color by mixing with black."""
-    hex_color = hex_color.lstrip("#")
-    r = int(hex_color[0:2], 16)
-    g = int(hex_color[2:4], 16)
-    b = int(hex_color[4:6], 16)
-    r = int(r * (1 - factor))
-    g = int(g * (1 - factor))
-    b = int(b * (1 - factor))
+    return mix(hex_color, (0, 0, 0), factor)
+
+
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    h = hex_color.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def _rgb_to_hex(r: int, g: int, b: int) -> str:
     return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def mix(hex_color: str, target: tuple[int, int, int], factor: float) -> str:
+    """Mix a hex color toward *target* by *factor* (0..1)."""
+    r, g, b = _hex_to_rgb(hex_color)
+    tr, tg, tb = target
+    return _rgb_to_hex(
+        round(r + (tr - r) * factor),
+        round(g + (tg - g) * factor),
+        round(b + (tb - b) * factor),
+    )
+
+
+def _channel_lin(value: int) -> float:
+    v = value / 255
+    return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+
+
+def _relative_luminance(hex_color: str) -> float:
+    r, g, b = _hex_to_rgb(hex_color)
+    return 0.2126 * _channel_lin(r) + 0.7152 * _channel_lin(g) + 0.0722 * _channel_lin(b)
+
+
+def contrast_ratio(a: str, b: str) -> float:
+    """WCAG contrast ratio between two hex colors (1..21)."""
+    la = _relative_luminance(a)
+    lb = _relative_luminance(b)
+    lighter, darker = max(la, lb), min(la, lb)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def ensure_contrast(
+    hex_color: str, against: str, min_ratio: float = 4.5, prefer: str = "lighten"
+) -> str:
+    """Return hex_color adjusted until it has >= min_ratio contrast vs against.
+
+    wallust's "bright black" (color8) frequently ends up nearly identical to
+    the background on dark wallpapers, which renders muted text (sidebar
+    labels, comments, diff context) invisible. Mixing toward white (dark
+    surfaces) or black (light surfaces) preserves the hue while restoring
+    legibility.
+    """
+    target = (255, 255, 255) if prefer == "lighten" else (0, 0, 0)
+    color = hex_color
+    for step in range(1, 13):
+        if contrast_ratio(color, against) >= min_ratio:
+            return color
+        color = mix(hex_color, target, min(0.08 * step, 0.96))
+    return color
 
 
 def generate_theme():
@@ -39,7 +82,7 @@ def generate_theme():
         print(f"Error: {WAL_COLORS_PATH} not found. Run pywal/wallust first.")
         sys.exit(1)
 
-    with open(WAL_COLORS_PATH, "r") as f:
+    with open(WAL_COLORS_PATH) as f:
         wal = json.load(f)
 
     bg = wal["special"]["background"]
@@ -61,14 +104,15 @@ def generate_theme():
     # Borders
     border_dark = lighten(bg, 0.25)
     border_light = darken(bg_light, 0.25)
-    border_active_dark = c.get("color7", lighten(bg, 0.45))
-    border_active_light = c.get("color7", darken(bg_light, 0.45))
-    border_subtle_dark = lighten(bg, 0.15)
-    border_subtle_light = darken(bg_light, 0.15)
 
-    # Muted text
-    text_muted_dark = c.get("color8", lighten(bg, 0.45))
-    text_muted_light = c.get("color8", darken(bg_light, 0.45))
+    # Muted text / comments: guarantee legibility on the surfaces they are
+    # rendered on instead of trusting color8 blindly.
+    muted_dark = c.get("color8") or lighten(bg, 0.45)
+    muted_light = c.get("color8") or darken(bg_light, 0.45)
+    text_muted_dark = ensure_contrast(muted_dark, panel_dark, 4.5, "lighten")
+    text_muted_light = ensure_contrast(muted_light, panel_light, 4.5, "darken")
+    comment_dark = ensure_contrast(muted_dark, bg, 4.5, "lighten")
+    comment_light = ensure_contrast(muted_light, bg_light, 4.5, "darken")
 
     theme = {
         "$schema": "https://opencode.ai/theme.json",
@@ -101,6 +145,8 @@ def generate_theme():
             "wal_border_light": border_light,
             "wal_text_muted_dark": text_muted_dark,
             "wal_text_muted_light": text_muted_light,
+            "wal_comment_dark": comment_dark,
+            "wal_comment_light": comment_light,
             "wal_bg_light": bg_light,
             "wal_fg_light": fg_light,
         },
@@ -124,14 +170,14 @@ def generate_theme():
             "borderSubtle": {"dark": "wal_border_dark", "light": "wal_border_light"},
             "diffAdded": {"dark": "wal_c2", "light": "wal_c10"},
             "diffRemoved": {"dark": "wal_c1", "light": "wal_c9"},
-            "diffContext": {"dark": "wal_c8", "light": "wal_c8"},
-            "diffHunkHeader": {"dark": "wal_c8", "light": "wal_c8"},
+            "diffContext": {"dark": "wal_comment_dark", "light": "wal_comment_light"},
+            "diffHunkHeader": {"dark": "wal_comment_dark", "light": "wal_comment_light"},
             "diffHighlightAdded": {"dark": "wal_c10", "light": "wal_c2"},
             "diffHighlightRemoved": {"dark": "wal_c9", "light": "wal_c1"},
             "diffAddedBg": {"dark": "wal_panel_dark", "light": "wal_panel_light"},
             "diffRemovedBg": {"dark": "wal_panel_dark", "light": "wal_panel_light"},
             "diffContextBg": {"dark": "wal_bg", "light": "wal_bg_light"},
-            "diffLineNumber": {"dark": "wal_c8", "light": "wal_c8"},
+            "diffLineNumber": {"dark": "wal_comment_dark", "light": "wal_comment_light"},
             "diffAddedLineNumberBg": {"dark": "wal_panel_dark", "light": "wal_panel_light"},
             "diffRemovedLineNumberBg": {"dark": "wal_panel_dark", "light": "wal_panel_light"},
             "markdownText": {"dark": "wal_fg", "light": "wal_fg_light"},
@@ -142,13 +188,13 @@ def generate_theme():
             "markdownBlockQuote": {"dark": "wal_c3", "light": "wal_c11"},
             "markdownEmph": {"dark": "wal_c5", "light": "wal_c13"},
             "markdownStrong": {"dark": "wal_c7", "light": "wal_c15"},
-            "markdownHorizontalRule": {"dark": "wal_c8", "light": "wal_c8"},
+            "markdownHorizontalRule": {"dark": "wal_comment_dark", "light": "wal_comment_light"},
             "markdownListItem": {"dark": "wal_c4", "light": "wal_c12"},
             "markdownListEnumeration": {"dark": "wal_c6", "light": "wal_c14"},
             "markdownImage": {"dark": "wal_c4", "light": "wal_c12"},
             "markdownImageText": {"dark": "wal_c6", "light": "wal_c14"},
             "markdownCodeBlock": {"dark": "wal_fg", "light": "wal_fg_light"},
-            "syntaxComment": {"dark": "wal_c8", "light": "wal_c8"},
+            "syntaxComment": {"dark": "wal_comment_dark", "light": "wal_comment_light"},
             "syntaxKeyword": {"dark": "wal_c1", "light": "wal_c9"},
             "syntaxFunction": {"dark": "wal_c4", "light": "wal_c12"},
             "syntaxVariable": {"dark": "wal_c5", "light": "wal_c13"},
@@ -175,7 +221,7 @@ def set_tui_theme():
     tui = {}
     if TUI_PATH.exists():
         try:
-            with open(TUI_PATH, "r") as f:
+            with open(TUI_PATH) as f:
                 tui = json.load(f)
         except (json.JSONDecodeError, OSError):
             tui = {}
