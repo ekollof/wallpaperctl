@@ -107,7 +107,8 @@ def detect_tools(de: DesktopEnvironment, *, strict: bool = False) -> ToolReport:
     report.present["openlinkhub"] = olh_ok
     if not olh_ok:
         report.warnings.append(
-            "openlinkhub not reachable at http://127.0.0.1:27003: Corsair RGB via OpenLinkHub skipped"
+            "openlinkhub not reachable at http://127.0.0.1:27003: "
+            "Corsair RGB via OpenLinkHub skipped"
         )
 
     if strict and report.missing_required:

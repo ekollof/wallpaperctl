@@ -1,9 +1,9 @@
-from pathlib import Path
 import time
+from pathlib import Path
 
+from wallpaperctl.config import OpsConfig
 from wallpaperctl.maint.cleanup import run_cleanup
 from wallpaperctl.maint.verify import run_verify
-from wallpaperctl.config import OpsConfig
 
 
 def test_cleanup_prunes_old_backups(tmp_path: Path, monkeypatch):

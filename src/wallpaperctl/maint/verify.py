@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 import sys
-from pathlib import Path
 
 from wallpaperctl.config import OpsConfig
 from wallpaperctl.util import have, home, run

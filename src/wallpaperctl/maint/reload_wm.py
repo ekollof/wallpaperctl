@@ -5,7 +5,6 @@ from __future__ import annotations
 import shutil
 import sys
 import time
-from pathlib import Path
 
 from wallpaperctl.util import have, hex_to_rgb, home, read_wal_colors, run
 

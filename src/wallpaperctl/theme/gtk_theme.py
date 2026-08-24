@@ -142,7 +142,6 @@ class GtkThemeOp:
             lines = text.splitlines()
             out: list[str] = []
             has_dark = False
-            has_theme = False
             for line in lines:
                 if line.startswith("gtk-application-prefer-dark-theme="):
                     out.append("gtk-application-prefer-dark-theme=1")
@@ -153,15 +152,14 @@ class GtkThemeOp:
                         out.append(f"gtk-theme-name={theme_name}")
                     else:
                         out.append(line)
-                    has_theme = True
                 else:
                     out.append(line)
             if not has_dark:
-                if any(l.startswith("[Settings]") for l in out):
-                    new = []
-                    for l in out:
-                        new.append(l)
-                        if l.startswith("[Settings]") and not has_dark:
+                if any(line.startswith("[Settings]") for line in out):
+                    new: list[str] = []
+                    for line in out:
+                        new.append(line)
+                        if line.startswith("[Settings]") and not has_dark:
                             new.append("gtk-application-prefer-dark-theme=1")
                             has_dark = True
                     out = new
@@ -288,9 +286,12 @@ class GtkThemeOp:
             return
         try:
             lines = [
-                l
-                for l in conf.read_text(encoding="utf-8", errors="replace").splitlines()
-                if "Gtk/ApplicationPreferDarkTheme" not in l and "Net/ThemeName" not in l
+                line
+                for line in conf.read_text(
+                    encoding="utf-8", errors="replace"
+                ).splitlines()
+                if "Gtk/ApplicationPreferDarkTheme" not in line
+                and "Net/ThemeName" not in line
             ]
             x_theme = theme
             if not is_dark_theme_name(theme):

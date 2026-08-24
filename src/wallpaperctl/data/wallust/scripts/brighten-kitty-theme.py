@@ -57,7 +57,8 @@ def parse_hex(h: str) -> tuple[int, int, int]:
 
 
 def to_hex(r: float, g: float, b: float) -> str:
-    return f"#{int(round(max(0, min(255, r)))):02x}{int(round(max(0, min(255, g)))):02x}{int(round(max(0, min(255, b)))):02x}"
+    clamped = (max(0, min(255, v)) for v in (r, g, b))
+    return "#" + "".join(f"{int(round(v)):02x}" for v in clamped)
 
 
 def lin(c: float) -> float:

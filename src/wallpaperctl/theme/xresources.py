@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from wallpaperctl.context import WallpaperContext
 from wallpaperctl.theme.base import debug_op
 from wallpaperctl.util import have, home, run

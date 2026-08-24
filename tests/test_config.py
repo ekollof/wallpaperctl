@@ -1,6 +1,7 @@
-from wallpaperctl.config import OpsConfig, _parse_sh_exports
-from pathlib import Path
 import tempfile
+from pathlib import Path
+
+from wallpaperctl.config import OpsConfig, _parse_sh_exports
 
 
 def test_parse_sh_exports():

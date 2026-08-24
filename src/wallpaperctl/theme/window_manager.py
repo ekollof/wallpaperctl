@@ -10,7 +10,6 @@ from wallpaperctl.theme.base import debug_op
 from wallpaperctl.util import have, pgrep_exact, run
 
 
-
 class WindowManagerOp:
     name = "window-manager"
 

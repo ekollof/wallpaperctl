@@ -15,7 +15,6 @@ from wallpaperctl.sources import dedup, optimize, providers
 from wallpaperctl.sources.optimize import is_image
 from wallpaperctl.util import log_error, sanitize_string
 
-
 log = logging.getLogger("wallpaperctl")
 
 
@@ -144,7 +143,9 @@ def fetch_random_wallpaper(
 
 def _download(url: str, dest: Path, provider: str) -> bool:
     try:
-        with httpx.Client(timeout=httpx.Timeout(30.0, connect=10.0), follow_redirects=True) as client:
+        with httpx.Client(
+            timeout=httpx.Timeout(30.0, connect=10.0), follow_redirects=True
+        ) as client:
             with client.stream("GET", url) as r:
                 r.raise_for_status()
                 with dest.open("wb") as f:

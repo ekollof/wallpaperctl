@@ -1,5 +1,5 @@
 from wallpaperctl.detect.desktop import DesktopEnvironment, detect_desktop
-from wallpaperctl.util import sanitize_string, hex_to_rgb
+from wallpaperctl.util import hex_to_rgb, sanitize_string
 
 
 def test_sanitize():

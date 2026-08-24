@@ -14,8 +14,8 @@ are clamped to safe xterm-256 grey-ramp values so text is always readable.
 """
 
 import json
-import sys
 import os
+import sys
 
 
 def hex_to_rgb(h):
@@ -26,12 +26,12 @@ def hex_to_rgb(h):
 def rgb_to_hsl(r, g, b):
     r, g, b = r / 255, g / 255, b / 255
     mx, mn = max(r, g, b), min(r, g, b)
-    l = (mx + mn) / 2
+    light = (mx + mn) / 2
     if mx == mn:
         h = s = 0.0
     else:
         d = mx - mn
-        s = d / (2 - mx - mn) if l > 0.5 else d / (mx + mn)
+        s = d / (2 - mx - mn) if light > 0.5 else d / (mx + mn)
         if mx == r:
             h = (g - b) / d + (6 if g < b else 0)
         elif mx == g:
@@ -39,7 +39,7 @@ def rgb_to_hsl(r, g, b):
         else:
             h = (r - g) / d + 4
         h /= 6
-    return h, s, l
+    return h, s, light
 
 
 def xterm256_rgb(idx):
@@ -79,8 +79,8 @@ def xterm256_rgb(idx):
 
 def xterm_lightness(idx):
     r, g, b = xterm256_rgb(idx)
-    _, _, l = rgb_to_hsl(r, g, b)
-    return l
+    _, _, light = rgb_to_hsl(r, g, b)
+    return light
 
 
 def dist(a, b):
@@ -112,8 +112,8 @@ def deduplicate(assignments):
 
 def lightness_of(h):
     r, g, b = hex_to_rgb(h)
-    _, _, l = rgb_to_hsl(r, g, b)
-    return l
+    _, _, light = rgb_to_hsl(r, g, b)
+    return light
 
 
 # Minimum lightness difference required between a fg and bg color pair.
@@ -141,11 +141,11 @@ def contrast_ranked_candidates(fg_idx, bg_idx):
     fg_rgb = xterm256_rgb(fg_idx)
 
     def score(i):
-        l = xterm_lightness(i)
-        if abs(l - bg_l) < MIN_CONTRAST:
+        light = xterm_lightness(i)
+        if abs(light - bg_l) < MIN_CONTRAST:
             return float("inf")
         color_dist = dist(fg_rgb, xterm256_rgb(i))
-        lightness_penalty = abs(l - target_l) * 10000
+        lightness_penalty = abs(light - target_l) * 10000
         return color_dist + lightness_penalty
 
     # Cube colours first (preserve hue), then grey ramp
@@ -190,8 +190,8 @@ def main():
 
     def lightness(h):
         r, g, b = hex_to_rgb(h)
-        _, _, l = rgb_to_hsl(r, g, b)
-        return l
+        _, _, light = rgb_to_hsl(r, g, b)
+        return light
 
     def saturation(h):
         r, g, b = hex_to_rgb(h)
@@ -318,9 +318,13 @@ def main():
 #
 # Role assignments (palette hex -> xterm index):
 #   special.bg={special_bg_hex}(default)  bg_mid={hex_list[bg_mid_idx]}->{bg_mid}
-#   fg_dim={hex_list[fg_dim_idx]}->{fg_dim}  fg_normal={hex_list[fg_normal_idx]}->{fg_normal}  fg_bright={hex_list[fg_bright_idx]}->{fg_bright}
-#   accent1(flagged)={hex_list[accent1_idx]}->{accent1}  accent2(unread)={hex_list[accent2_idx]}->{accent2}
-#   accent3(search/quote)={hex_list[accent3_idx]}->{accent3}  accent4(attach/tree)={hex_list[accent4_idx]}->{accent4}
+#   fg_dim={hex_list[fg_dim_idx]}->{fg_dim}
+#   fg_normal={hex_list[fg_normal_idx]}->{fg_normal}
+#   fg_bright={hex_list[fg_bright_idx]}->{fg_bright}
+#   accent1(flagged)={hex_list[accent1_idx]}->{accent1}
+#   accent2(unread)={hex_list[accent2_idx]}->{accent2}
+#   accent3(search/quote)={hex_list[accent3_idx]}->{accent3}
+#   accent4(attach/tree)={hex_list[accent4_idx]}->{accent4}
 #   warm(bold/error)={hex_list[warm_idx]}->{warm}
 
 # Clear pattern-based color lists before re-applying so that re-sourcing this
