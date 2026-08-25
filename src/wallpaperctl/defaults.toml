@@ -19,6 +19,7 @@ dynamic_icons = false
 homeassistant = true
 steam_theme = false
 cosmic_theme = true
+cde_theme = true
 pywalfox = true
 
 [wallust]
@@ -55,6 +56,9 @@ wallpaper_dir = "~/Wallpapers"
 # pywalfox_text_contrast = 7.0     # tab titles / main text vs toolbar
 # pywalfox_icon_contrast = 3.5     # mid accents / icons
 # pywalfox_control_contrast = 3.5
+
+# CDE palette (see theme/cde.py)
+# cde_restart_dtwm = true          # soft-restart dtwm after palette write
 
 perceptual_hash_threshold = 14
 hash_size = 8

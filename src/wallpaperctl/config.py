@@ -71,6 +71,8 @@ class OpsConfig:
     enable_homeassistant: bool = True
     enable_steam_theme: bool = False
     enable_cosmic_theme: bool = True
+    enable_cde_theme: bool = True
+    cde_restart_dtwm: bool = True
     enable_pywalfox: bool = True
     pywalfox_improve_contrast: bool = True
     pywalfox_text_contrast: float = 7.0

@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
 
 from wallpaperctl.context import WallpaperContext
+from wallpaperctl.theme.cde import CdeThemeOp
 from wallpaperctl.theme.cinnamon_theme import CinnamonThemeOp
 from wallpaperctl.theme.cosmic import CosmicThemeOp
 from wallpaperctl.theme.dynamic_icons import DynamicIconsOp
@@ -43,6 +44,7 @@ THEME_OPS = [
     DynamicIconsOp(),
     HomeassistantOp(),
     SteamOp(),
+    CdeThemeOp(),  # needs wallust colors; CDE palette + dtwm restart
 ]
 
 
