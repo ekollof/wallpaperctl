@@ -1,6 +1,16 @@
+from pathlib import Path
+
 from wallpaperctl.detect.desktop import DesktopEnvironment
-from wallpaperctl.setup.deps import Kind, classify_deps, de_profile
-from wallpaperctl.setup.packages import detect_package_manager
+from wallpaperctl.setup import wallust_bootstrap as wb
+from wallpaperctl.setup.deps import (
+    DEPS,
+    DepStatus,
+    Kind,
+    animated_backend_hint,
+    classify_deps,
+    de_profile,
+)
+from wallpaperctl.setup.packages import detect_package_manager, packages_to_install
 
 
 def test_de_profile_hyprland_noctalia():
@@ -21,3 +31,170 @@ def test_package_manager_detection():
     pm = detect_package_manager()
     if pm:
         assert pm.install_cmd
+
+
+# ── Animated wallpapers in setup ─────────────────────────────────────────
+
+_ANIMATED_IDS = {"mpv", "mpvpaper", "xwinwrap", "socat", "ffmpeg"}
+
+
+def _dep(dep_id: str):
+    return next(d for d in DEPS if d.id == dep_id)
+
+
+def test_animated_deps_in_catalog():
+    ids = {d.id for d in DEPS if d.kind == Kind.ANIMATED}
+    assert _ANIMATED_IDS <= ids
+
+
+def test_animated_deps_never_required_but_relevant():
+    for de in (
+        DesktopEnvironment(plasma=True),
+        DesktopEnvironment(hyprland=True),
+        DesktopEnvironment(xfce=True),
+        DesktopEnvironment(),
+    ):
+        statuses = classify_deps(de)
+        anim = [s for s in statuses if s.dep.kind == Kind.ANIMATED]
+        assert {s.dep.id for s in anim} >= _ANIMATED_IDS
+        assert all(not s.required for s in anim)
+        assert all(s.relevant for s in anim)
+
+
+def test_animated_deps_installed_without_optional_flag():
+    pm = detect_package_manager()
+    if not pm or pm.id not in ("pacman", "apt", "dnf"):
+        return
+    expected = {
+        i
+        for i in _ANIMATED_IDS
+        if _dep(i).package_for(pm.id)  # e.g. xwinwrap/mpvpaper are Arch-only
+    }
+    statuses = [
+        DepStatus(dep=_dep(i), present=False, relevant=True, required=False)
+        for i in sorted(expected)
+    ]
+    pairs = packages_to_install(statuses, pm, include_optional=False)
+    assert {d.id for d, _ in pairs} == expected
+
+
+def _fake_statuses() -> list:
+    """All deps present except the animated ones (set per-test)."""
+    return [
+        DepStatus(dep=d, present=d.kind != Kind.ANIMATED, relevant=True, required=False)
+        for d in DEPS
+    ]
+
+
+def _set_present(statuses: list, dep_id: str, present: bool) -> None:
+    for s in statuses:
+        if s.dep.id == dep_id:
+            s.present = present
+            return
+    raise AssertionError(f"dep {dep_id} not found")
+
+
+def test_animated_backend_hint_wayland(monkeypatch):
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-1")
+    monkeypatch.delenv("DISPLAY", raising=False)
+    # no animated tooling at all
+    assert animated_backend_hint(DesktopEnvironment(hyprland=True), _fake_statuses()) == ""
+    statuses = _fake_statuses()
+    for s in statuses:
+        s.present = True
+    assert "mpvpaper" in animated_backend_hint(
+        DesktopEnvironment(hyprland=True), statuses
+    )
+    # Noctalia/COSMIC own their wallpaper surface
+    assert animated_backend_hint(DesktopEnvironment(noctalia=True), statuses) == ""
+
+
+def test_animated_backend_hint_x11(monkeypatch):
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    monkeypatch.setenv("DISPLAY", ":0")
+    statuses = _fake_statuses()
+    assert animated_backend_hint(DesktopEnvironment(), statuses) == ""
+    _set_present(statuses, "mpv", True)
+    assert animated_backend_hint(DesktopEnvironment(), statuses) == ""
+    _set_present(statuses, "xwinwrap", True)
+    assert "xwinwrap" in animated_backend_hint(DesktopEnvironment(), statuses)
+
+
+def test_animated_backend_hint_needs_mpv(monkeypatch):
+    monkeypatch.setenv("DISPLAY", ":0")
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    statuses = _fake_statuses()
+    _set_present(statuses, "xwinwrap", True)  # xwinwrap without mpv is useless
+    assert animated_backend_hint(DesktopEnvironment(), statuses) == ""
+
+
+# ── Wallust bootstrap: script refresh + drift reporting ──────────────────
+
+
+def test_tree_diff_detects_missing_and_stale(tmp_path: Path):
+    src = tmp_path / "pkg"
+    (src / "scripts").mkdir(parents=True)
+    (src / "scripts" / "hook.py").write_text("new", encoding="utf-8")
+    dst = tmp_path / "user"
+    (dst / "scripts").mkdir(parents=True)
+    assert wb._tree_diff(src, dst) == ["scripts/hook.py"]
+    (dst / "scripts" / "hook.py").write_text("old", encoding="utf-8")
+    assert wb._tree_diff(src, dst) == ["scripts/hook.py"]
+    (dst / "scripts" / "hook.py").write_text("new", encoding="utf-8")
+    assert wb._tree_diff(src, dst) == []
+
+
+def _write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def test_bootstrap_refreshes_stale_scripts_keeps_templates(tmp_path: Path, monkeypatch):
+    pkg = wb._packaged_wallust_root()
+    assert pkg is not None
+    fake_home = tmp_path / "home"
+    cfg_dir = fake_home / ".config" / "wallust"
+
+    stale_script = cfg_dir / "scripts"
+    stale_script.mkdir(parents=True)
+    hook = next((pkg / "scripts").glob("*.py"))
+    (stale_script / hook.name).write_text("# old version", encoding="utf-8")
+    _write(cfg_dir / "templates" / "colors.css", "# user customized\n")
+    _write(cfg_dir / "wallust.toml", "# user config\n")
+
+    monkeypatch.setattr(wb, "have", lambda cmd: True)
+    monkeypatch.setattr(wb, "home", lambda: fake_home)
+
+    rc = wb.bootstrap_wallust(force=False, yes=True)
+    assert rc == 0
+
+    installed = cfg_dir / "scripts" / hook.name
+    assert installed.read_text(encoding="utf-8") == hook.read_text(encoding="utf-8")
+    backup = Path(str(installed) + ".bak-wallpaperctl")
+    assert backup.is_file()
+    assert backup.read_text(encoding="utf-8") == "# old version"
+    # user template and toml untouched without force
+    assert (cfg_dir / "templates" / "colors.css").read_text(
+        encoding="utf-8"
+    ) == "# user customized\n"
+    assert (cfg_dir / "wallust.toml").read_text(encoding="utf-8") == "# user config\n"
+
+
+def test_status_reports_drift(tmp_path: Path, monkeypatch):
+    pkg = wb._packaged_wallust_root()
+    assert pkg is not None
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(wb, "have", lambda cmd: True)
+    monkeypatch.setattr(wb, "home", lambda: fake_home)
+
+    st = wb.wallust_status()
+    assert set(st["stale_scripts"]) == {
+        p.relative_to(pkg / "scripts").as_posix()
+        for p in (pkg / "scripts").rglob("*.py")
+        if "__pycache__" not in p.parts
+    }
+
+    wb.bootstrap_wallust(force=False, yes=True)
+    st = wb.wallust_status()
+    assert st["stale_scripts"] == []
+    assert st["stale_templates"] == []

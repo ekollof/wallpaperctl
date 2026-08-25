@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from enum import Enum
 
@@ -14,6 +15,7 @@ class Kind(str, Enum):
     PYTHON = "python"  # pip/uv package (already in pyproject)
     DE = "desktop"  # required for active DE
     THEME = "theme"  # wallust / theming
+    ANIMATED = "animated"  # video wallpaper playback / frame extraction
     OPTIONAL = "optional"
 
 
@@ -116,6 +118,59 @@ DEPS: list[Dep] = [
         dnf="xorg-x11-server-utils",
         freebsd_pkg="xrandr",
         openbsd_pkg="xrandr",
+    ),
+    # Animated wallpapers (video playback + frame extraction)
+    Dep(
+        "mpv",
+        "Animated wallpaper playback engine",
+        Kind.ANIMATED,
+        "mpv",
+        pacman="mpv",
+        apt="mpv",
+        dnf="mpv",
+        freebsd_pkg="mpv",
+        openbsd_pkg="mpv",
+    ),
+    Dep(
+        "mpvpaper",
+        "Animated wallpaper on Wayland (layer-shell)",
+        Kind.ANIMATED,
+        "mpvpaper",
+        pacman="mpvpaper",
+        notes=(
+            "Arch: mpvpaper; elsewhere build from "
+            "github.com/ghostbuster91/mpvpaper. Not used under Noctalia/COSMIC"
+        ),
+    ),
+    Dep(
+        "xwinwrap",
+        "Animated wallpaper on X11 (xwinwrap + mpv)",
+        Kind.ANIMATED,
+        "xwinwrap",
+        pacman="xwinwrap-git",  # AUR via paru/yay
+        notes="AUR: xwinwrap-git; otherwise build from github.com/ammgws/xwinwrap",
+    ),
+    Dep(
+        "socat",
+        "Graceful stop/control of mpvpaper IPC socket",
+        Kind.ANIMATED,
+        "socat",
+        pacman="socat",
+        apt="socat",
+        dnf="socat",
+        freebsd_pkg="socat",
+        openbsd_pkg="socat",
+    ),
+    Dep(
+        "ffmpeg",
+        "Extract representative frame from video for theming",
+        Kind.ANIMATED,
+        "ffmpeg",
+        pacman="ffmpeg",
+        apt="ffmpeg",
+        dnf="ffmpeg",
+        freebsd_pkg="ffmpeg",
+        openbsd_pkg="ffmpeg",
     ),
     # Plasma
     Dep(
@@ -359,3 +414,24 @@ def classify_deps(
             DepStatus(dep=dep, present=present, relevant=relevant, required=required)
         )
     return out
+
+
+def animated_backend_hint(
+    de: DesktopEnvironment,
+    statuses: list[DepStatus],
+) -> str:
+    """Animated backend usable in this session, or '' when none.
+
+    Mirrors the backend selection of set/animated.AnimatedSetter.
+    """
+    present = {s.dep.id for s in statuses if s.present}
+    if "mpv" not in present:
+        return ""
+    if os.environ.get("WAYLAND_DISPLAY"):
+        # Noctalia and COSMIC own their wallpaper surfaces.
+        if de.cosmic or de.noctalia:
+            return ""
+        return "mpvpaper (Wayland)" if "mpvpaper" in present else ""
+    if os.environ.get("DISPLAY"):
+        return "xwinwrap + mpv (X11)" if "xwinwrap" in present else ""
+    return ""

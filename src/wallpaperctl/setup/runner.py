@@ -6,7 +6,12 @@ import sys
 
 from wallpaperctl.detect.desktop import detect_desktop
 from wallpaperctl.setup.bootstrap import bootstrap_config
-from wallpaperctl.setup.deps import Kind, classify_deps, de_profile
+from wallpaperctl.setup.deps import (
+    Kind,
+    animated_backend_hint,
+    classify_deps,
+    de_profile,
+)
 from wallpaperctl.setup.packages import (
     detect_package_manager,
     install_python_extras,
@@ -121,13 +126,28 @@ def cmd_check(
     show("Python (bundled with wallpaperctl):", lambda s: s.dep.kind == Kind.PYTHON)
     show("Core / theme:", lambda s: s.dep.kind in (Kind.CORE, Kind.THEME))
     show(f"Desktop ({profile}):", lambda s: s.dep.kind == Kind.DE)
+    show("Animated wallpapers:", lambda s: s.dep.kind == Kind.ANIMATED)
     show("Optional:", lambda s: s.dep.kind == Kind.OPTIONAL)
+
+    hint = animated_backend_hint(de, statuses)
+    print("Animated playback backend for this session:")
+    print(f"  {hint or 'none available (pick static images or install above)'}")
+    print()
 
     ws = wallust_status()
     print("Wallust:")
     print(f"  binary:  {'yes' if ws['binary'] else 'NO'}")
     print(f"  config:  {ws['config_path']} ({'yes' if ws['config_exists'] else 'missing'})")
     print(f"  wal cache colors: {'yes' if ws['wal_colors'] else 'missing'}")
+    stale_n = len(ws["stale_templates"]) + len(ws["stale_scripts"])
+    if stale_n:
+        print(
+            f"  vendored files outdated: {len(ws['stale_templates'])} template(s), "
+            f"{len(ws['stale_scripts'])} script(s)"
+        )
+        print("  Fix: wallpaperctl setup wallust-templates --force")
+    else:
+        print("  vendored templates/scripts: up to date")
     ts = themes_status()
     print("GTK themes (FlatColor):")
     print(f"  FlatColor:      {'yes' if ts['flatcolor'] else 'NO — wallpaperctl setup themes'}")
