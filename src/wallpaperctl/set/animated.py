@@ -76,43 +76,18 @@ class AnimatedSetter:
     def _set_x11(self, ctx: WallpaperContext) -> bool:
         """X11/XLibre animated wallpaper.
 
-        EXWM + picom ``transparent-clipping`` composites the *root pixmap*
-        through transparent Emacs frames — xwinwrap override windows never
-        show there. In that stack (and whenever ffmpeg+feh exist and we detect
-        EXWM/picom), paint frames onto the root pixmap. Otherwise use
-        xwinwrap+mpv for classic WMs.
+        Prefer xwinwrap+mpv (override-redirect below other windows). Fall back
+        to ffmpeg+feh root-pixmap updates when xwinwrap/mpv are missing — that
+        path is what picom ``transparent-clipping`` can reveal through EXWM.
         """
         self._stop_previous()
         self._set_static_underlay(ctx)
-        if self._prefer_root_pixmap_animation() and have("ffmpeg") and have("feh"):
-            return self._set_root_pixmap_animation(ctx)
         if have("xwinwrap") and have("mpv"):
             return self._set_xwinwrap(ctx, already_prepared=True)
         if have("ffmpeg") and have("feh"):
             debug_set(self.name, "falling back to root-pixmap animation", ctx)
             return self._set_root_pixmap_animation(ctx)
         debug_set(self.name, "need xwinwrap+mpv or ffmpeg+feh for X11 video", ctx)
-        return False
-
-    @staticmethod
-    def _wm_net_name() -> str:
-        if not have("xprop"):
-            return ""
-        r = run(["xprop", "-root", "_NET_SUPPORTING_WM_CHECK"], timeout=3)
-        m = re.search(r"window id # (0x[0-9a-fA-F]+)", r.stdout or "")
-        if not m:
-            return ""
-        r2 = run(["xprop", "-id", m.group(1), "_NET_WM_NAME"], timeout=3)
-        m2 = re.search(r'=\s*"([^"]*)"', r2.stdout or "")
-        return (m2.group(1) if m2 else "").strip()
-
-    @classmethod
-    def _prefer_root_pixmap_animation(cls) -> bool:
-        """True when xwinwrap cannot show through the desktop (EXWM/picom)."""
-        if cls._wm_net_name().upper() == "EXWM":
-            return True
-        if have("pgrep") and run(["pgrep", "-x", "picom"], timeout=3).returncode == 0:
-            return True
         return False
 
     @staticmethod
@@ -134,8 +109,9 @@ class AnimatedSetter:
     def _set_root_pixmap_animation(self, ctx: WallpaperContext) -> bool:
         """Loop video frames onto the X root pixmap (feh) via ffmpeg.
 
-        Works with EXWM + picom transparent-clipping, which only reveals the
-        root pixmap through transparent clients — not xwinwrap windows.
+        Fallback when xwinwrap/mpv are unavailable. Also usable under picom
+        ``transparent-clipping``, which composites the root pixmap (not
+        xwinwrap windows) through transparent clients.
         """
         if not (have("ffmpeg") and have("feh")):
             debug_set(self.name, "ffmpeg/feh required for root-pixmap animation", ctx)
@@ -314,21 +290,26 @@ wait "$FP" || true
             self._state_dir.mkdir(parents=True, exist_ok=True)
             with self._log_file.open("w") as log_fh:
                 for geometry_args in self._x11_geometry_args():
+                    # Do not pass -ov: on EXWM, takase1121 xwinwrap's -ov path
+                    # finds the fullscreen workspace frame and XCreateWindow
+                    # parents onto the Emacs inner window (video becomes a
+                    # "tab", not a root underlay). Without -ov, -fdt sets
+                    # TYPE_DESKTOP on a real root child; EXWM leaves it alone.
                     process = subprocess.Popen(
                         [
                             "xwinwrap",
+                            "-b",
                             "-ni",
                             "-s",
                             *geometry_args,
                             "-st",
                             "-sp",
                             "-nf",
-                            "-b",
-                            "-ov",
                             "-fdt",
                             "--",
                             "mpv",
-                            "--wid=%WID",
+                            "-wid",
+                            "%WID",
                             "--really-quiet",
                             "--framedrop=vo",
                             *_MPV_WALLPAPER_OPTIONS,
