@@ -5,6 +5,10 @@ API base URLs (still current as of 2026):
   * Pexels    GET https://api.pexels.com/v1/search
   * Pixabay   GET https://pixabay.com/api/
 
+Animated (video) variants, same API keys:
+  * Pexels    GET https://api.pexels.com/v1/videos/search
+  * Pixabay   GET https://pixabay.com/api/videos/
+
 Note: Unsplash returns HTTP 404 with ``{"errors":["No photos found."]}`` when a
 query matches nothing — that is *not* a wrong endpoint. Always search with a
 single category term, not the full comma-separated CATEGORIES string.
@@ -53,6 +57,16 @@ PIXABAY_MAX_HITS = 500
 @dataclass
 class ProviderResult:
     image_url: str
+    photographer_name: str
+    photographer_username: str
+    provider_name: str
+
+
+@dataclass
+class VideoResult:
+    video_url: str
+    width: int
+    height: int
     photographer_name: str
     photographer_username: str
     provider_name: str
@@ -238,6 +252,168 @@ def fetch_pixabay(api: ApiConfig) -> ProviderResult | None:
     )
     return None
 
+
+
+# ── Animated (video) providers ───────────────────────────────────────────
+
+_MAX_VIDEO_SECONDS = 60
+
+
+def _prefer_short(videos: list[dict]) -> list[dict]:
+    """Short clips first; fall back to all when nothing qualifies."""
+    short = [v for v in videos if 0 < int(v.get("duration") or 0) <= _MAX_VIDEO_SECONDS]
+    return short or videos
+
+
+def _pixabay_tier(hit: dict) -> dict | None:
+    """Best rendition dict {url,width,height} from a Pixabay video hit."""
+    tiers = hit.get("videos") or {}
+    if not isinstance(tiers, dict):
+        return None
+    for name in ("large", "medium", "small", "tiny"):
+        t = tiers.get(name) or {}
+        url = t.get("url")
+        if url and int(t.get("width") or 0) >= int(t.get("height") or 0):
+            return {
+                "url": url,
+                "width": int(t.get("width") or 0),
+                "height": int(t.get("height") or 0),
+            }
+    return None
+
+
+def fetch_pexels_video(api: ApiConfig) -> VideoResult | None:
+    """GET /v1/videos/search — same key/headers as the photo endpoint."""
+    url = "https://api.pexels.com/v1/videos/search"
+    headers = {"Authorization": api.pexels_api_key}
+    last_query = ""
+    try:
+        with _client() as client:
+            for query in _shuffled_queries(api):
+                last_query = query
+                page = random.randint(1, 10)
+                params = {
+                    "query": query,
+                    "orientation": "landscape",
+                    "per_page": 15,
+                    "page": page,
+                }
+                r = client.get(url, headers=headers, params=params)
+                r.raise_for_status()
+                data = r.json()
+                videos = data.get("videos") or []
+                if not videos and page != 1:
+                    params["page"] = 1
+                    r = client.get(url, headers=headers, params=params)
+                    r.raise_for_status()
+                    data = r.json()
+                    videos = data.get("videos") or []
+                if not videos:
+                    log.debug("Pexels video: no results for query=%r", query)
+                    continue
+                video = random.choice(_prefer_short(videos))
+                files = [
+                    f
+                    for f in video.get("video_files") or []
+                    if f.get("file_type") == "video/mp4" and f.get("link")
+                ]
+                if not files:
+                    continue
+
+                def rank(f: dict) -> tuple[int, int]:
+                    w = int(f.get("width") or 0)
+                    h = int(f.get("height") or 0)
+                    landscape_first = 0 if w >= h else 1
+                    # Closest to 1080p keeps files sane; 4K/SD lose.
+                    return (landscape_first, abs(h - 1080))
+
+                files.sort(key=rank)
+                chosen = files[0]
+                user = video.get("user") or {}
+                return VideoResult(
+                    video_url=chosen["link"],
+                    width=int(chosen.get("width") or 0),
+                    height=int(chosen.get("height") or 0),
+                    photographer_name=user.get("name") or "Unknown Photographer",
+                    photographer_username=user.get("name") or "unknown",
+                    provider_name="Pexels",
+                )
+    except Exception as e:
+        log_error(f"Pexels video fetch failed: {e}")
+        return None
+    log_error(f"Pexels: no videos for query={last_query!r}")
+    return None
+
+
+def fetch_pixabay_video(api: ApiConfig) -> VideoResult | None:
+    """GET https://pixabay.com/api/videos/ — key as query param."""
+    per_page = 20
+    last_query = ""
+    try:
+        with _client() as client:
+            for query in _shuffled_queries(api):
+                last_query = query
+                params: dict = {
+                    "key": api.pixabay_api_key,
+                    "safesearch": "true",
+                    "per_page": per_page,
+                    "page": 1,
+                }
+                if query.lower() in PIXABAY_CATEGORIES:
+                    params["category"] = query.lower()
+                else:
+                    params["q"] = query
+
+                r = client.get("https://pixabay.com/api/videos/", params=params)
+                r.raise_for_status()
+                data = r.json()
+                total_hits = int(data.get("totalHits") or 0)
+                if total_hits <= 0:
+                    log.debug("Pixabay video: no hits for query=%r", query)
+                    continue
+                max_page = max(1, min(total_hits, PIXABAY_MAX_HITS) // per_page)
+                if max_page > 1:
+                    params["page"] = random.randint(1, max_page)
+                    r = client.get("https://pixabay.com/api/videos/", params=params)
+                    r.raise_for_status()
+                    data = r.json()
+                hits = [h for h in (data.get("hits") or []) if _pixabay_tier(h)]
+                if not hits:
+                    continue
+                hit = random.choice(_prefer_short(hits))
+                tier = _pixabay_tier(hit)
+                assert tier is not None
+                return VideoResult(
+                    video_url=tier["url"],
+                    width=tier["width"],
+                    height=tier["height"],
+                    photographer_name=hit.get("user") or "Unknown Photographer",
+                    photographer_username=hit.get("user") or "unknown",
+                    provider_name="Pixabay",
+                )
+    except Exception as e:
+        log_error(f"Pixabay video fetch failed: {e}")
+        return None
+    log_error(f"Pixabay found no videos for query={last_query!r}.")
+    return None
+
+
+def pick_video_provider(tried: set[str]) -> str:
+    """Weighted: Pexels 70%, Pixabay 30% among untried."""
+    order = [("pexels", 70), ("pixabay", 30)]
+    available = [name for name, _ in order if name not in tried]
+    if not available:
+        return random.choice([name for name, _ in order])
+    weights = [w for name, w in order if name in available]
+    return random.choices(available, weights=weights, k=1)[0]
+
+
+def fetch_video_from_provider(name: str, api: ApiConfig) -> VideoResult | None:
+    if name == "pexels":
+        return fetch_pexels_video(api)
+    if name == "pixabay":
+        return fetch_pixabay_video(api)
+    return None
 
 
 def pick_provider(tried: set[str]) -> str:

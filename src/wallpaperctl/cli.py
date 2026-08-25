@@ -13,9 +13,13 @@ from wallpaperctl.config import load_api_config, load_ops_config
 from wallpaperctl.detect.desktop import detect_desktop
 from wallpaperctl.detect.tools import detect_tools
 from wallpaperctl.lock import WallpaperLock
+from wallpaperctl.media import is_animated
 from wallpaperctl.notify import safe_notify
 from wallpaperctl.sources.cache_mgr import clear_all_caches, run_cache_command
-from wallpaperctl.sources.fetch import fetch_random_wallpaper
+from wallpaperctl.sources.fetch import (
+    fetch_random_animated_wallpaper,
+    fetch_random_wallpaper,
+)
 from wallpaperctl.sources.local import pick_random_wallpaper
 from wallpaperctl.sources.optimize import add_credits
 from wallpaperctl.theme.runner import list_ops
@@ -82,7 +86,10 @@ def _classic_main(argv: list[str]) -> int:
     parser.add_argument(
         "--animated",
         action="store_true",
-        help="Pick a random animated wallpaper from ~/Wallpapers/animated",
+        help=(
+            "Pick a random animated wallpaper from ~/Wallpapers/animated "
+            "(with -r: fetch a video from Pexels/Pixabay)"
+        ),
     )
     parser.add_argument(
         "-c",
@@ -101,9 +108,6 @@ def _classic_main(argv: list[str]) -> int:
         version=f"wallpaperctl {__version__}",
     )
     args = parser.parse_args(argv)
-
-    if args.animated and args.r:
-        parser.error("--animated cannot be combined with -r (remote fetch)")
 
     debug = bool(os.environ.get("DEBUG"))
     ensure_debug_logging(debug)
@@ -157,21 +161,29 @@ def _run_action(
     wallpaper: Path | None = None
 
     if fetch:
-        print("Fetching random wallpaper from Unsplash, Pexels, or Pixabay (1920x1080)...")
         api = load_api_config(categories_override=categories)
         api.require_keys()
-        result = fetch_random_wallpaper(api, ops)
+        if animated:
+            print("Fetching random animated wallpaper from Pexels/Pixabay...")
+            result = fetch_random_animated_wallpaper(api, ops)
+        else:
+            print(
+                "Fetching random wallpaper from Unsplash, Pexels, or Pixabay (1920x1080)..."
+            )
+            result = fetch_random_wallpaper(api, ops)
+        what = "animated wallpaper" if animated else "wallpaper"
         if result is None:
             print(
-                "Error: Failed to fetch a wallpaper after all attempts.",
+                f"Error: Failed to fetch an {what} after all attempts.",
                 file=sys.stderr,
             )
             print(
-                f"Falling back to local random wallpaper from {ops.path('wallpaper_dir')}...",
+                f"Falling back to local random wallpaper from "
+                f"{ops.path('wallpaper_dir')}...",
                 file=sys.stderr,
             )
             safe_notify("Wallpaper Script", "Remote fetch failed, using local wallpaper")
-            wallpaper = pick_random_wallpaper(ops)
+            wallpaper = pick_random_wallpaper(ops, animated_only=animated)
             print(f"Selected local wallpaper: {wallpaper.name}")
         else:
             wallpaper = result.path
@@ -180,7 +192,7 @@ def _run_action(
             provider_name = result.provider_name
             safe_notify(
                 "Wallpaper Script",
-                f"Downloaded wallpaper by {photographer_name} from {provider_name}",
+                f"Downloaded {what} by {photographer_name} from {provider_name}",
             )
     elif reload_:
         print("Reloading current wallpaper...")
@@ -228,7 +240,13 @@ def _run_action(
         print(f"Error: File '{wallpaper}' not found!", file=sys.stderr)
         return 1
 
-    if fetch and photographer_name and photographer_username and provider_name:
+    if (
+        fetch
+        and photographer_name
+        and photographer_username
+        and provider_name
+        and not is_animated(wallpaper)
+    ):
         if "_credited.jpg" not in wallpaper.name:
             print(f"Attempting to add credits to wallpaper from {provider_name}")
             wallpaper = add_credits(
@@ -266,6 +284,11 @@ def _subcommand_main(argv: list[str]) -> int:
 
     p_fetch = sub.add_parser("fetch", help="Fetch remote wallpaper")
     p_fetch.add_argument("-c", "--categories", default=None)
+    p_fetch.add_argument(
+        "--animated",
+        action="store_true",
+        help="Fetch a video wallpaper from Pexels/Pixabay into ~/Wallpapers/animated",
+    )
 
     sub.add_parser("reload", help="Reload ~/.wallpaper")
     sub.add_parser("clear-cache", help="Clear URL + hash caches (same as: cache clear)")
@@ -599,7 +622,7 @@ def _subcommand_main(argv: list[str]) -> int:
                 path=None,
                 ops=ops,
                 debug=debug,
-                animated=False,
+                animated=args.animated,
             )
         if args.cmd == "reload":
             return _run_action(

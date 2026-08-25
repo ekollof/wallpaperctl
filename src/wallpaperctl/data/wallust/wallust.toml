@@ -96,7 +96,8 @@ steam = { template = "steam.css", target = "~/.cache/wallust/steam-webkit.css", 
 
 [hooks]
 neomutt = 'python3 ~/.config/wallust/scripts/wallust-muttrc.py'
-opencode = 'python3 ~/.config/wallust/scripts/generate-wallust-theme.py && pkill -USR2 opencode 2>/dev/null || true'
+# Regenerate the opencode theme; it is picked up live, no reload signal.
+opencode = 'python3 ~/.config/wallust/scripts/generate-wallust-theme.py'
 # Brighten ANSI slots for remote TUIs (htop CPU% = green), then reload kitty
 kitty = 'python3 ~/.config/wallust/scripts/brighten-kitty-theme.py && killall -SIGUSR1 kitty 2>/dev/null || true'
 # Pywalfox is updated by wallpaperctl's pywalfox theme op (contrast + update)

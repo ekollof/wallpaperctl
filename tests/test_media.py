@@ -9,9 +9,10 @@ from wallpaperctl.config import OpsConfig
 from wallpaperctl.media import extract_frame, is_animated
 
 
-def test_is_animated_only_accepts_mp4() -> None:
+def test_is_animated_accepts_video_containers() -> None:
     assert is_animated(Path("wall.mp4"))
-    assert not is_animated(Path("wall.webm"))
+    assert is_animated(Path("wall.webm"))
+    assert is_animated(Path("wall.mov"))
     assert not is_animated(Path("wall.png"))
 
 

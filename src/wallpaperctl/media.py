@@ -11,7 +11,7 @@ from wallpaperctl.util import run
 
 log = logging.getLogger("wallpaperctl")
 
-ANIMATED_SUFFIXES = frozenset({".mp4"})
+ANIMATED_SUFFIXES = frozenset({".mp4", ".webm", ".mov", ".mkv"})
 
 
 def is_animated(path: Path) -> bool:

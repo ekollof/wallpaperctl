@@ -10,6 +10,7 @@ from pathlib import Path
 
 import httpx
 
+from wallpaperctl import media
 from wallpaperctl.config import ApiConfig, OpsConfig
 from wallpaperctl.sources import dedup, optimize, providers
 from wallpaperctl.sources.optimize import is_image
@@ -141,19 +142,119 @@ def fetch_random_wallpaper(
     return None
 
 
-def _download(url: str, dest: Path, provider: str) -> bool:
+def fetch_random_animated_wallpaper(
+    api: ApiConfig,
+    ops: OpsConfig | None = None,
+) -> FetchResult | None:
+    """Fetch a random video wallpaper (Pexels/Pixabay) into ~/Wallpapers/animated."""
+    ops = ops or OpsConfig()
+    anim_dir = ops.path("wallpaper_dir") / "animated"
+    try:
+        anim_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        log_error(f"Could not create {anim_dir}: {e}")
+        return None
+    url_log = ops.path("url_log")
+    max_attempts = ops.fetch_max_attempts
+    index: dedup.LibraryIndex | None = None
+
+    tried: set[str] = set()
+    for attempt in range(1, max_attempts + 1):
+        print(
+            f"Attempt {attempt} of {max_attempts} to fetch an animated wallpaper "
+            f"with categories '{api.categories}'...",
+            file=sys.stderr,
+        )
+        provider_key = providers.pick_video_provider(tried)
+        tried.add(provider_key)
+        result = providers.fetch_video_from_provider(provider_key, api)
+        if not result or not result.video_url:
+            log_error(f"Failed to get video URL from {provider_key}")
+            continue
+
+        if dedup.is_url_duplicate(result.video_url, result.provider_name, url_log):
+            log.debug("URL duplicate from %s, retrying", result.provider_name)
+            continue
+
+        suffix = Path(result.video_url.split("?")[0]).suffix.lower() or ".mp4"
+        if suffix not in media.ANIMATED_SUFFIXES:
+            suffix = ".mp4"
+        ts = datetime.now().strftime("%Y%m%d%H%M%S")
+        base = (
+            f"{ts}_{sanitize_string(result.photographer_name)}_"
+            f"{sanitize_string(result.photographer_username)}_"
+            f"{sanitize_string(result.provider_name)}"
+        )
+        # Timestamps have 1s resolution — never overwrite an existing video.
+        dest = anim_dir / f"{base}{suffix}"
+        counter = 2
+        while dest.exists():
+            dest = anim_dir / f"{base}-{counter}{suffix}"
+            counter += 1
+
+        # Videos are much larger than photos — allow a longer download window.
+        if not _download(result.video_url, dest, result.provider_name, timeout=300.0):
+            dest.unlink(missing_ok=True)
+            continue
+        if not dest.is_file() or dest.stat().st_size < 100_000:
+            log_error(f"Downloaded video from {result.provider_name} looks truncated")
+            dest.unlink(missing_ok=True)
+            continue
+
+        # Soft checks via a representative frame (needs ffmpeg; skipped when
+        # unavailable). The extracted frame is cached and reused at set time.
+        frame = media.extract_frame(dest, ops)
+        if frame is not None:
+            if not dedup.check_aspect_ratio(frame, ops):
+                print(
+                    f"Video from {result.provider_name} is not near-16:9, retrying...",
+                    file=sys.stderr,
+                )
+                dest.unlink(missing_ok=True)
+                continue
+            if index is None:
+                index = dedup.LibraryIndex(ops)
+                print("Building perceptual index of wallpaper library…", file=sys.stderr)
+                index.ensure_loaded(progress=True)
+            match = index.is_duplicate(frame)
+            if match.matched:
+                print(
+                    f"Skipping perceptual duplicate from {result.provider_name} "
+                    f"({match.reason})",
+                    file=sys.stderr,
+                )
+                dest.unlink(missing_ok=True)
+                continue
+            index.add(frame)
+
+        dedup.log_url(result.video_url, result.provider_name, url_log)
+        return FetchResult(
+            path=dest,
+            photographer_name=result.photographer_name,
+            photographer_username=result.photographer_username,
+            provider_name=result.provider_name,
+        )
+
+    log_error(f"Failed to fetch an animated wallpaper after {max_attempts} attempts")
+    return None
+
+
+def _download(url: str, dest: Path, provider: str, *, timeout: float = 30.0) -> bool:
+    partial = dest.with_name(dest.name + ".part")
     try:
         with httpx.Client(
-            timeout=httpx.Timeout(30.0, connect=10.0), follow_redirects=True
+            timeout=httpx.Timeout(timeout, connect=10.0), follow_redirects=True
         ) as client:
             with client.stream("GET", url) as r:
                 r.raise_for_status()
-                with dest.open("wb") as f:
+                with partial.open("wb") as f:
                     for chunk in r.iter_bytes():
                         f.write(chunk)
+        partial.replace(dest)
         return True
     except Exception as e:
         log_error(f"Failed to download wallpaper from {provider}: {e}")
+        partial.unlink(missing_ok=True)
         return False
 
 
