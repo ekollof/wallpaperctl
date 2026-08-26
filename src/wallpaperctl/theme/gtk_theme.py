@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import re
-import subprocess
 import time
 from pathlib import Path
 
 from wallpaperctl.context import WallpaperContext
 from wallpaperctl.theme.base import debug_op
-from wallpaperctl.util import have, home, is_dark_theme_name, pgrep_exact, pgrep_full, run
+from wallpaperctl.util import (
+    have,
+    home,
+    is_dark_theme_name,
+    pgrep_exact,
+    pgrep_full,
+    run,
+    spawn_detached,
+)
 
 
 class GtkThemeOp:
@@ -102,15 +109,8 @@ class GtkThemeOp:
         # Always clear standalone daemon first
         self._stop_standalone_xsettingsd(ctx)
         debug_op(self.name, "starting xfsettingsd --daemon", ctx)
-        env = None
         # Inherit a clean DISPLAY/XDG from the session if possible
-        subprocess.Popen(
-            ["xfsettingsd", "--replace", "--daemon"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-            env=env,
-        )
+        spawn_detached(["xfsettingsd", "--replace", "--daemon"])
         time.sleep(0.4)
 
     def _reload_gtk(self, ctx: WallpaperContext) -> bool:
@@ -308,12 +308,7 @@ class GtkThemeOp:
             if r.returncode != 0 and have("xsettingsd"):
                 run(["pkill", "xsettingsd"], timeout=5)
                 time.sleep(0.1)
-                subprocess.Popen(
-                    ["xsettingsd"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True,
-                )
+                spawn_detached(["xsettingsd"])
         except OSError:
             pass
 

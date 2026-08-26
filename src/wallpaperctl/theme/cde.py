@@ -24,13 +24,12 @@ from __future__ import annotations
 import logging
 import os
 import re
-import subprocess
 import time
 from pathlib import Path
 
 from wallpaperctl.context import WallpaperContext
 from wallpaperctl.theme.base import debug_op
-from wallpaperctl.util import have, hex_to_rgb, home, read_wal_colors, run
+from wallpaperctl.util import have, hex_to_rgb, home, read_wal_colors, run, spawn_detached
 
 log = logging.getLogger("wallpaperctl")
 
@@ -192,16 +191,8 @@ def _start_dtwm() -> bool:
     if bin_path is None:
         log.warning("dtwm binary not found; cannot start workspace manager")
         return False
-    try:
-        subprocess.Popen(
-            [str(bin_path)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-            env=os.environ.copy(),
-        )
-    except OSError as e:
-        log.warning("Failed to start dtwm: %s", e)
+    if spawn_detached([str(bin_path)], env=os.environ.copy()) is None:
+        log.warning("Failed to start dtwm")
         return False
     for _ in range(40):
         time.sleep(0.15)

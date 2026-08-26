@@ -6,7 +6,7 @@ import time
 
 from wallpaperctl.context import WallpaperContext
 from wallpaperctl.theme.base import debug_op
-from wallpaperctl.util import have, home, pgrep_exact, run
+from wallpaperctl.util import have, home, pgrep_exact, run, spawn_detached
 
 
 class NotificationsOp:
@@ -42,14 +42,7 @@ class NotificationsOp:
         run(["pkill", "dunst"], timeout=5)
         time.sleep(0.5)
         # Start detached only (do not also run dunst in the foreground)
-        import subprocess
-
-        subprocess.Popen(
-            ["dunst"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+        spawn_detached(["dunst"])
         return True
 
     def _reload_mako(self, ctx: WallpaperContext) -> bool:
@@ -58,25 +51,11 @@ class NotificationsOp:
             if r.returncode != 0:
                 run(["pkill", "mako"], timeout=5)
                 time.sleep(0.5)
-                import subprocess
-
-                subprocess.Popen(
-                    ["mako"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True,
-                )
+                spawn_detached(["mako"])
         else:
             run(["pkill", "mako"], timeout=5)
             time.sleep(0.5)
-            import subprocess
-
-            subprocess.Popen(
-                ["mako"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
+            spawn_detached(["mako"])
 
         if pgrep_exact("waybar"):
             style = home() / ".config" / "waybar" / "style.css"
@@ -92,12 +71,5 @@ class NotificationsOp:
                 debug_op(self.name, "restarting waybar", ctx)
                 run(["pkill", "waybar"], timeout=5)
                 time.sleep(0.5)
-                import subprocess
-
-                subprocess.Popen(
-                    ["waybar"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True,
-                )
+                spawn_detached(["waybar"])
         return True

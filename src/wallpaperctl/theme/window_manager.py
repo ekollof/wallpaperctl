@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import subprocess
 import time
 
 from wallpaperctl.context import WallpaperContext
 from wallpaperctl.theme.base import debug_op
-from wallpaperctl.util import have, pgrep_exact, run
+from wallpaperctl.util import have, pgrep_exact, run, spawn_detached
 
 
 class WindowManagerOp:
@@ -27,12 +26,7 @@ class WindowManagerOp:
         if have("xsettingsd") and not pgrep_exact("xfsettingsd"):
             run(["pkill", "-x", "xsettingsd"], timeout=5)
             time.sleep(0.2)
-            subprocess.Popen(
-                ["xsettingsd"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
+            spawn_detached(["xsettingsd"])
             debug_op(self.name, "xsettingsd restarted", ctx)
         elif pgrep_exact("xfsettingsd"):
             debug_op(self.name, "xfsettingsd present; not starting xsettingsd", ctx)

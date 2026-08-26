@@ -27,6 +27,33 @@ def have(cmd: str) -> bool:
     return which(cmd) is not None
 
 
+def spawn_detached(
+    args: Sequence[str],
+    *,
+    env: dict[str, str] | None = None,
+) -> subprocess.Popen[bytes] | None:
+    """Start a long-lived helper fully detached from the caller's TTY.
+
+    Daemons like ``xsettingsd`` never exit. If they inherit the interactive
+    shell's stdin, zsh/bash can appear hung after wallpaperctl returns even
+    when the child is in a new session. Always wire stdio to DEVNULL and
+    call ``setsid`` via ``start_new_session``.
+    """
+    try:
+        return subprocess.Popen(
+            list(args),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+            env=env,
+        )
+    except OSError as e:
+        log.debug("spawn_detached %s failed: %s", args, e)
+        return None
+
+
 def run(
     args: Sequence[str] | str,
     *,
