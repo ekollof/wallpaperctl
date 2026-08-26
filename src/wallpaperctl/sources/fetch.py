@@ -25,6 +25,7 @@ class FetchResult:
     photographer_name: str
     photographer_username: str
     provider_name: str
+    tags: str = ""
 
 
 def fetch_random_wallpaper(
@@ -133,6 +134,7 @@ def fetch_random_wallpaper(
             photographer_name=result.photographer_name,
             photographer_username=result.photographer_username,
             provider_name=result.provider_name,
+            tags=result.tags,
         )
 
 
@@ -233,6 +235,7 @@ def fetch_random_animated_wallpaper(
             photographer_name=result.photographer_name,
             photographer_username=result.photographer_username,
             provider_name=result.provider_name,
+            tags=result.tags,
         )
 
     log_error(f"Failed to fetch an animated wallpaper after {max_attempts} attempts")

@@ -262,7 +262,7 @@ def test_cli_routes_r_animated_to_video_fetch(
     monkeypatch.setattr(
         cli,
         "load_api_config",
-        lambda categories_override=None: ApiConfig(
+        lambda categories_override=None, exclude_override=None: ApiConfig(
             unsplash_access_key="x", pexels_api_key="x", pixabay_api_key="x"
         ),
     )

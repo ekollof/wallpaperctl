@@ -98,6 +98,15 @@ def _classic_main(argv: list[str]) -> int:
         help="Categories (comma-separated), e.g. space,galaxy",
     )
     parser.add_argument(
+        "-x",
+        dest="exclude",
+        metavar="keywords",
+        help=(
+            "Exclude keywords (comma-separated); skip downloads whose "
+            "tags/alt/description match (client-side filter)"
+        ),
+    )
+    parser.add_argument(
         "path",
         nargs="?",
         help="Path to a specific wallpaper file",
@@ -136,6 +145,7 @@ def _classic_main(argv: list[str]) -> int:
             fetch=args.r,
             reload_=args.R,
             categories=args.categories,
+            exclude=args.exclude,
             path=args.path,
             ops=ops,
             debug=debug,
@@ -154,6 +164,7 @@ def _run_action(
     ops,
     debug: bool,
     animated: bool = False,
+    exclude: str | None = None,
 ) -> int:
     photographer_name = ""
     photographer_username = ""
@@ -161,7 +172,10 @@ def _run_action(
     wallpaper: Path | None = None
 
     if fetch:
-        api = load_api_config(categories_override=categories)
+        api = load_api_config(
+            categories_override=categories,
+            exclude_override=exclude,
+        )
         api.require_keys()
         if animated:
             print("Fetching random animated wallpaper from Pexels/Pixabay...")
@@ -190,6 +204,14 @@ def _run_action(
             photographer_name = result.photographer_name
             photographer_username = result.photographer_username
             provider_name = result.provider_name
+            print(
+                f"Downloaded {what}: {wallpaper.name}\n"
+                f"  by {photographer_name} from {provider_name}"
+            )
+            if result.tags:
+                print(f"  tags: {result.tags}")
+            else:
+                print("  tags: (none from provider)")
             safe_notify(
                 "Wallpaper Script",
                 f"Downloaded {what} by {photographer_name} from {provider_name}",
@@ -284,6 +306,12 @@ def _subcommand_main(argv: list[str]) -> int:
 
     p_fetch = sub.add_parser("fetch", help="Fetch remote wallpaper")
     p_fetch.add_argument("-c", "--categories", default=None)
+    p_fetch.add_argument(
+        "-x",
+        "--exclude",
+        default=None,
+        help="Exclude keywords (comma-separated); client-side tag/alt filter",
+    )
     p_fetch.add_argument(
         "--animated",
         action="store_true",
@@ -619,6 +647,7 @@ def _subcommand_main(argv: list[str]) -> int:
                 fetch=True,
                 reload_=False,
                 categories=args.categories,
+                exclude=args.exclude,
                 path=None,
                 ops=ops,
                 debug=debug,

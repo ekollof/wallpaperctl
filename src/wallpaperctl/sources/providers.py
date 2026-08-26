@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import random
+import re
 from dataclasses import dataclass
 
 import httpx
@@ -60,6 +61,8 @@ class ProviderResult:
     photographer_name: str
     photographer_username: str
     provider_name: str
+    # Human-readable tags / alt text from the provider (may be empty).
+    tags: str = ""
 
 
 @dataclass
@@ -70,6 +73,7 @@ class VideoResult:
     photographer_name: str
     photographer_username: str
     provider_name: str
+    tags: str = ""
 
 
 def _client() -> httpx.Client:
@@ -80,6 +84,53 @@ def category_terms(api: ApiConfig) -> list[str]:
     """Split CATEGORIES into individual search terms."""
     terms = [c.strip() for c in (api.categories or "").split(",") if c.strip()]
     return terms or ["nature"]
+
+
+def exclude_terms(api: ApiConfig) -> list[str]:
+    """Split EXCLUDE_KEYWORDS into lowercase needles for client-side filtering."""
+    return [
+        t.strip().lower()
+        for t in (api.exclude_keywords or "").split(",")
+        if t.strip()
+    ]
+
+
+def matches_exclude(*parts: object, api: ApiConfig) -> bool:
+    """True if any exclude term appears as a substring in the joined text.
+
+    Providers do not support server-side negative keywords; we filter hits
+    using tags / alt / description when present.
+    """
+    terms = exclude_terms(api)
+    if not terms:
+        return False
+    blob = " ".join(str(p) for p in parts if p).lower()
+    if not blob:
+        return False
+    return any(term in blob for term in terms)
+
+
+def _choose_unexcluded(
+    items: list,
+    api: ApiConfig,
+    text_fn,
+) -> object | None:
+    """Shuffle *items* and return the first that does not match excludes."""
+    if not items:
+        return None
+    if not exclude_terms(api):
+        return random.choice(items)
+    shuffled = list(items)
+    random.shuffle(shuffled)
+    for item in shuffled:
+        if not matches_exclude(*text_fn(item), api=api):
+            return item
+    log.debug(
+        "All %d hit(s) matched EXCLUDE_KEYWORDS=%r",
+        len(items),
+        api.exclude_keywords,
+    )
+    return None
 
 
 def pick_query(api: ApiConfig) -> str:
@@ -103,6 +154,75 @@ def _shuffled_queries(api: ApiConfig, *, limit: int = 4) -> list[str]:
     return terms[: max(1, limit)]
 
 
+def _unsplash_text(data: dict) -> tuple[str, ...]:
+    tags = data.get("tags") or []
+    tag_titles = []
+    if isinstance(tags, list):
+        for t in tags:
+            if isinstance(t, dict):
+                tag_titles.append(str(t.get("title") or ""))
+            else:
+                tag_titles.append(str(t))
+    return (
+        data.get("description") or "",
+        data.get("alt_description") or "",
+        " ".join(tag_titles),
+    )
+
+
+def _pexels_slug_title(url: str) -> str:
+    """Human title from a Pexels page URL slug.
+
+    Example: ``.../video/plants-by-the-river-1208094/`` → ``plants by the river``.
+    Video ``tags`` is often an empty list; the slug is the useful text.
+    """
+    if not url:
+        return ""
+    slug = url.rstrip("/").rsplit("/", 1)[-1]
+    slug = re.sub(r"-\d+$", "", slug)
+    return slug.replace("-", " ").strip()
+
+
+def _pexels_photo_text(photo: dict) -> tuple[str, ...]:
+    return (
+        photo.get("alt") or "",
+        _pexels_slug_title(str(photo.get("url") or "")),
+    )
+
+
+def _pexels_video_text(video: dict) -> tuple[str, ...]:
+    raw_tags = video.get("tags") or []
+    if isinstance(raw_tags, list):
+        tag_str = ", ".join(str(t) for t in raw_tags if t)
+    else:
+        tag_str = str(raw_tags)
+    return (
+        tag_str,
+        _pexels_slug_title(str(video.get("url") or "")),
+    )
+
+
+def _pixabay_text(hit: dict) -> tuple[str, ...]:
+    return (hit.get("tags") or "",)
+
+
+def _display_tags(*parts: object) -> str:
+    """Normalize provider tag/alt fragments into a comma-separated label."""
+    seen: list[str] = []
+    for part in parts:
+        if not part:
+            continue
+        text = str(part).strip()
+        if not text:
+            continue
+        # Pixabay already uses commas; alt text is usually one phrase.
+        for piece in text.replace(";", ",").split(","):
+            piece = piece.strip()
+            if piece and piece.lower() not in {s.lower() for s in seen}:
+                seen.append(piece)
+    return ", ".join(seen)
+
+
 def fetch_unsplash(api: ApiConfig) -> ProviderResult | None:
     """GET /photos/random — auth via Authorization: Client-ID <key>."""
     url = "https://api.unsplash.com/photos/random"
@@ -123,6 +243,13 @@ def fetch_unsplash(api: ApiConfig) -> ProviderResult | None:
                     continue
                 r.raise_for_status()
                 data = r.json()
+                if matches_exclude(*_unsplash_text(data), api=api):
+                    log.debug(
+                        "Unsplash: excluded hit for query=%r (%r)",
+                        query,
+                        api.exclude_keywords,
+                    )
+                    continue
                 # CDN resize params belong on the image URL, not the API query.
                 raw = data["urls"]["raw"]
                 image_url = f"{raw}&w=1920&h=1080&fit=crop"
@@ -132,6 +259,7 @@ def fetch_unsplash(api: ApiConfig) -> ProviderResult | None:
                     photographer_name=user.get("name") or "Unknown Photographer",
                     photographer_username=user.get("username") or "unknown",
                     provider_name="Unsplash",
+                    tags=_display_tags(*_unsplash_text(data)),
                 )
     except Exception as e:
         log_error(f"Unsplash fetch failed: {e}")
@@ -170,13 +298,17 @@ def fetch_pexels(api: ApiConfig) -> ProviderResult | None:
                 if not photos:
                     log.debug("Pexels: no photos for query=%r", query)
                     continue
-                photo = random.choice(photos)
+                photo = _choose_unexcluded(photos, api, _pexels_photo_text)
+                if photo is None:
+                    continue
+                assert isinstance(photo, dict)
                 return ProviderResult(
                     image_url=photo["src"]["large2x"],
                     photographer_name=photo.get("photographer")
                     or "Unknown Photographer",
                     photographer_username=photo.get("photographer") or "unknown",
                     provider_name="Pexels",
+                    tags=_display_tags(*_pexels_photo_text(photo)),
                 )
     except Exception as e:
         log_error(f"Pexels fetch failed: {e}")
@@ -233,7 +365,10 @@ def fetch_pixabay(api: ApiConfig) -> ProviderResult | None:
                     hits = (r.json().get("hits") or [])
                 if not hits:
                     continue
-                hit = random.choice(hits)
+                hit = _choose_unexcluded(hits, api, _pixabay_text)
+                if hit is None:
+                    continue
+                assert isinstance(hit, dict)
                 image_url = hit.get("largeImageURL") or hit.get("webformatURL") or ""
                 if not image_url:
                     continue
@@ -242,6 +377,7 @@ def fetch_pixabay(api: ApiConfig) -> ProviderResult | None:
                     photographer_name=hit.get("user") or "Unknown Photographer",
                     photographer_username=hit.get("user") or "unknown",
                     provider_name="Pixabay",
+                    tags=_display_tags(*_pixabay_text(hit)),
                 )
     except Exception as e:
         log_error(f"Pixabay fetch failed: {e}")
@@ -311,7 +447,12 @@ def fetch_pexels_video(api: ApiConfig) -> VideoResult | None:
                 if not videos:
                     log.debug("Pexels video: no results for query=%r", query)
                     continue
-                video = random.choice(_prefer_short(videos))
+                video = _choose_unexcluded(
+                    _prefer_short(videos), api, _pexels_video_text
+                )
+                if video is None:
+                    continue
+                assert isinstance(video, dict)
                 files = [
                     f
                     for f in video.get("video_files") or []
@@ -337,6 +478,7 @@ def fetch_pexels_video(api: ApiConfig) -> VideoResult | None:
                     photographer_name=user.get("name") or "Unknown Photographer",
                     photographer_username=user.get("name") or "unknown",
                     provider_name="Pexels",
+                    tags=_display_tags(*_pexels_video_text(video)),
                 )
     except Exception as e:
         log_error(f"Pexels video fetch failed: {e}")
@@ -380,7 +522,10 @@ def fetch_pixabay_video(api: ApiConfig) -> VideoResult | None:
                 hits = [h for h in (data.get("hits") or []) if _pixabay_tier(h)]
                 if not hits:
                     continue
-                hit = random.choice(_prefer_short(hits))
+                hit = _choose_unexcluded(_prefer_short(hits), api, _pixabay_text)
+                if hit is None:
+                    continue
+                assert isinstance(hit, dict)
                 tier = _pixabay_tier(hit)
                 assert tier is not None
                 return VideoResult(
@@ -390,6 +535,7 @@ def fetch_pixabay_video(api: ApiConfig) -> VideoResult | None:
                     photographer_name=hit.get("user") or "Unknown Photographer",
                     photographer_username=hit.get("user") or "unknown",
                     provider_name="Pixabay",
+                    tags=_display_tags(*_pixabay_text(hit)),
                 )
     except Exception as e:
         log_error(f"Pixabay video fetch failed: {e}")

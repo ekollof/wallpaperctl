@@ -32,6 +32,8 @@ class ApiConfig:
     pexels_api_key: str = ""
     pixabay_api_key: str = ""
     categories: str = "nature,landscape,architecture"
+    # Comma-separated terms; client-side filter (APIs have no exclude param).
+    exclude_keywords: str = ""
 
     def require_keys(self) -> None:
         missing = [
@@ -212,7 +214,10 @@ def _parse_sh_exports(path: Path) -> dict[str, str]:
     return result
 
 
-def load_api_config(categories_override: str | None = None) -> ApiConfig:
+def load_api_config(
+    categories_override: str | None = None,
+    exclude_override: str | None = None,
+) -> ApiConfig:
     cfg = ApiConfig()
 
     # Env first
@@ -221,6 +226,8 @@ def load_api_config(categories_override: str | None = None) -> ApiConfig:
     cfg.pixabay_api_key = os.environ.get("PIXABAY_API_KEY", "")
     if os.environ.get("CATEGORIES"):
         cfg.categories = os.environ["CATEGORIES"]
+    if os.environ.get("EXCLUDE_KEYWORDS"):
+        cfg.exclude_keywords = os.environ["EXCLUDE_KEYWORDS"]
 
     sh_path = home() / ".config" / "wallpaper" / "config.sh"
     if sh_path.is_file():
@@ -230,6 +237,8 @@ def load_api_config(categories_override: str | None = None) -> ApiConfig:
         cfg.pixabay_api_key = values.get("PIXABAY_API_KEY", cfg.pixabay_api_key)
         if "CATEGORIES" in values and not categories_override:
             cfg.categories = values["CATEGORIES"]
+        if "EXCLUDE_KEYWORDS" in values and not exclude_override:
+            cfg.exclude_keywords = values["EXCLUDE_KEYWORDS"]
         log.debug("Loaded API config from %s", sh_path)
     else:
         # Optional pure-Python config
@@ -248,9 +257,13 @@ def load_api_config(categories_override: str | None = None) -> ApiConfig:
             cfg.pixabay_api_key = api.get("pixabay_api_key", cfg.pixabay_api_key)
             if "categories" in api and not categories_override:
                 cfg.categories = api["categories"]
+            if "exclude_keywords" in api and not exclude_override:
+                cfg.exclude_keywords = str(api["exclude_keywords"])
 
     if categories_override:
         cfg.categories = categories_override
+    if exclude_override is not None:
+        cfg.exclude_keywords = exclude_override
 
     return cfg
 
