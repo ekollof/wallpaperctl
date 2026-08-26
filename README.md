@@ -82,7 +82,7 @@ wallpaperctl verify              # icons + cinnamon + wallust colors
 wallpaperctl verify icons
 wallpaperctl setup check          # dependency audit for this desktop
 wallpaperctl setup install        # offer to install missing packages
-wallpaperctl setup wallust        # install shipped wallust.toml + templates + hooks
+wallpaperctl setup wallust        # wallust.toml + templates + hooks + OpenCode theme reloader
 wallpaperctl setup wallust-templates  # templates/scripts only (keep your toml)
 wallpaperctl setup wallust --force    # overwrite existing wallust.toml (backs up first)
 wallpaperctl setup themes         # install FlatColor / FlatColor-dark GTK themes
@@ -259,7 +259,7 @@ Required for full functionality (soft-deps skip when missing):
 4. Bootstrap DE data if needed:
    ```bash
    wallpaperctl setup check
-   wallpaperctl setup wallust      # templates + wallust.toml
+   wallpaperctl setup wallust      # templates + wallust.toml + OpenCode theme reloader
    wallpaperctl setup themes       # FlatColor GTK themes
    # or: wallpaperctl setup all
    wallpaperctl migrate            # PATH / config / tools checklist

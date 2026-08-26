@@ -24,3 +24,9 @@ with `--force`. `wallpaperctl setup check` reports when installed files differ
 from the packaged versions.
 
 Hooks expect scripts under `~/.config/wallust/scripts/` after install.
+
+`setup wallust` also installs the OpenCode TUI plugin
+`~/.config/opencode/plugins/wallust-hot-reload.ts` and registers it in
+`tui.json`. That watches `themes/wallust.json` so a running OpenCode session
+picks up palette changes without SIGUSR2 (which interrupts agents). Restart
+OpenCode once after the first install.

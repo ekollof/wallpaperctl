@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from wallpaperctl.detect.desktop import DesktopEnvironment
@@ -150,6 +151,8 @@ def _write(path: Path, text: str) -> None:
 
 
 def test_bootstrap_refreshes_stale_scripts_keeps_templates(tmp_path: Path, monkeypatch):
+    from wallpaperctl.setup import opencode_bootstrap as oc
+
     pkg = wb._packaged_wallust_root()
     assert pkg is not None
     fake_home = tmp_path / "home"
@@ -164,6 +167,7 @@ def test_bootstrap_refreshes_stale_scripts_keeps_templates(tmp_path: Path, monke
 
     monkeypatch.setattr(wb, "have", lambda cmd: True)
     monkeypatch.setattr(wb, "home", lambda: fake_home)
+    monkeypatch.setattr(oc, "home", lambda: fake_home)
 
     rc = wb.bootstrap_wallust(force=False, yes=True)
     assert rc == 0
@@ -181,11 +185,14 @@ def test_bootstrap_refreshes_stale_scripts_keeps_templates(tmp_path: Path, monke
 
 
 def test_status_reports_drift(tmp_path: Path, monkeypatch):
+    from wallpaperctl.setup import opencode_bootstrap as oc
+
     pkg = wb._packaged_wallust_root()
     assert pkg is not None
     fake_home = tmp_path / "home"
     monkeypatch.setattr(wb, "have", lambda cmd: True)
     monkeypatch.setattr(wb, "home", lambda: fake_home)
+    monkeypatch.setattr(oc, "home", lambda: fake_home)
 
     st = wb.wallust_status()
     assert set(st["stale_scripts"]) == {
@@ -198,3 +205,79 @@ def test_status_reports_drift(tmp_path: Path, monkeypatch):
     st = wb.wallust_status()
     assert st["stale_scripts"] == []
     assert st["stale_templates"] == []
+
+
+# ── OpenCode theme reloader ───────────────────────────────────────────────
+
+
+def test_opencode_bootstrap_installs_plugin_and_tui(tmp_path: Path, monkeypatch):
+    from wallpaperctl.setup import opencode_bootstrap as oc
+
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(oc, "home", lambda: fake_home)
+
+    rc = oc.bootstrap_opencode()
+    assert rc == 0
+
+    plugin = fake_home / ".config" / "opencode" / "plugins" / oc.PLUGIN_NAME
+    assert plugin.is_file()
+    pkg = oc._packaged_plugin()
+    assert pkg is not None
+    assert plugin.read_text(encoding="utf-8") == pkg.read_text(encoding="utf-8")
+
+    tui_path = fake_home / ".config" / "opencode" / "tui.json"
+    tui = json.loads(tui_path.read_text(encoding="utf-8"))
+    assert tui["theme"] == "wallust"
+    assert oc.PLUGIN_SPEC in tui["plugin"]
+
+    st = oc.opencode_status()
+    assert st["plugin_installed"]
+    assert st["plugin_listed"]
+    assert not st["plugin_stale"]
+
+
+def test_opencode_bootstrap_preserves_tui_keys_and_does_not_duplicate(
+    tmp_path: Path, monkeypatch
+):
+    from wallpaperctl.setup import opencode_bootstrap as oc
+
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(oc, "home", lambda: fake_home)
+
+    tui_path = fake_home / ".config" / "opencode" / "tui.json"
+    tui_path.parent.mkdir(parents=True)
+    tui_path.write_text(
+        json.dumps(
+            {
+                "$schema": "https://opencode.ai/tui.json",
+                "theme": "tokyonight",
+                "scroll_speed": 4,
+                "plugin": ["other.plugin", oc.PLUGIN_SPEC],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert oc.bootstrap_opencode() == 0
+    tui = json.loads(tui_path.read_text(encoding="utf-8"))
+    assert tui["theme"] == "wallust"
+    assert tui["scroll_speed"] == 4
+    assert tui["plugin"] == ["other.plugin", oc.PLUGIN_SPEC]
+
+
+def test_opencode_bootstrap_accepts_tuple_plugin_entry(tmp_path: Path, monkeypatch):
+    from wallpaperctl.setup import opencode_bootstrap as oc
+
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(oc, "home", lambda: fake_home)
+
+    tui_path = fake_home / ".config" / "opencode" / "tui.json"
+    tui_path.parent.mkdir(parents=True)
+    tui_path.write_text(
+        json.dumps({"plugin": [[oc.PLUGIN_SPEC, {"label": "hot"}]]}),
+        encoding="utf-8",
+    )
+
+    assert oc.bootstrap_opencode() == 0
+    tui = json.loads(tui_path.read_text(encoding="utf-8"))
+    assert tui["plugin"] == [[oc.PLUGIN_SPEC, {"label": "hot"}]]

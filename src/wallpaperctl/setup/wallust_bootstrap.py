@@ -138,9 +138,15 @@ def bootstrap_wallust(
         print("  hooks reference: python3 ~/.config/wallust/scripts/…")
 
     print()
+    from wallpaperctl.setup.opencode_bootstrap import bootstrap_opencode
+
+    print("OpenCode theme hot-reload:")
+    oc_rc = bootstrap_opencode(force=force)
+
+    print()
     print("wallpaperctl runs: wallust run --backend wal --palette kmeans <image>")
     print("(your wallust.toml backend/palette defaults apply when using wallust CLI directly)")
-    return 0
+    return oc_rc
 
 
 def _files_differ(a: Path, b: Path) -> bool:

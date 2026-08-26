@@ -12,6 +12,7 @@ from wallpaperctl.setup.deps import (
     classify_deps,
     de_profile,
 )
+from wallpaperctl.setup.opencode_bootstrap import opencode_status
 from wallpaperctl.setup.packages import (
     detect_package_manager,
     install_python_extras,
@@ -148,6 +149,16 @@ def cmd_check(
         print("  Fix: wallpaperctl setup wallust-templates --force")
     else:
         print("  vendored templates/scripts: up to date")
+    oc = opencode_status()
+    print("OpenCode (wallust theme reload):")
+    print(
+        f"  plugin:  {'yes' if oc['plugin_installed'] else 'NO — wallpaperctl setup wallust'}"
+        f"{' (outdated)' if oc['plugin_stale'] else ''}"
+    )
+    print(
+        f"  tui.json plugin: "
+        f"{'yes' if oc['plugin_listed'] else 'NO — wallpaperctl setup wallust'}"
+    )
     ts = themes_status()
     print("GTK themes (FlatColor):")
     print(f"  FlatColor:      {'yes' if ts['flatcolor'] else 'NO — wallpaperctl setup themes'}")

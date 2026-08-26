@@ -7,6 +7,43 @@ from pathlib import Path
 
 WAL_COLORS_PATH = Path.home() / ".cache" / "wal" / "colors.json"
 THEME_OUTPUT_PATH = Path.home() / ".config" / "opencode" / "themes" / "wallust.json"
+TUI_PATH = Path.home() / ".config" / "opencode" / "tui.json"
+OPENCODE_PLUGIN_SPEC = "./plugins/wallust-hot-reload.ts"
+OPENCODE_PLUGIN_PATH = Path.home() / ".config" / "opencode" / "plugins" / "wallust-hot-reload.ts"
+
+
+def _write_json(path: Path, data: object) -> None:
+    """Atomically write JSON so OpenCode's theme watcher sees a complete file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    tmp.replace(path)
+
+
+def plugin_spec_listed(tui: dict, spec: str = OPENCODE_PLUGIN_SPEC) -> bool:
+    plugins = tui.get("plugin")
+    if not isinstance(plugins, list):
+        return False
+    for entry in plugins:
+        if entry == spec:
+            return True
+        if isinstance(entry, list) and entry and entry[0] == spec:
+            return True
+    return False
+
+
+def ensure_plugin_spec(tui: dict, spec: str = OPENCODE_PLUGIN_SPEC) -> bool:
+    """Add *spec* to tui.json plugin list. Returns True if modified."""
+    plugins = tui.get("plugin")
+    if not isinstance(plugins, list):
+        tui["plugin"] = [spec]
+        return True
+    if plugin_spec_listed(tui, spec):
+        return False
+    plugins.append(spec)
+    return True
 
 
 def lighten(hex_color: str, factor: float = 0.15) -> str:
@@ -207,17 +244,11 @@ def generate_theme():
         },
     }
 
-    THEME_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(THEME_OUTPUT_PATH, "w") as f:
-        json.dump(theme, f, indent=2)
-
+    _write_json(THEME_OUTPUT_PATH, theme)
     print(f"Theme written to {THEME_OUTPUT_PATH}")
 
 
 def set_tui_theme():
-    TUI_PATH = Path.home() / ".config" / "opencode" / "tui.json"
-    TUI_PATH.parent.mkdir(parents=True, exist_ok=True)
-
     tui = {}
     if TUI_PATH.exists():
         try:
@@ -228,10 +259,10 @@ def set_tui_theme():
 
     tui["$schema"] = "https://opencode.ai/tui.json"
     tui["theme"] = "wallust"
+    if OPENCODE_PLUGIN_PATH.is_file():
+        ensure_plugin_spec(tui)
 
-    with open(TUI_PATH, "w") as f:
-        json.dump(tui, f, indent=2)
-
+    _write_json(TUI_PATH, tui)
     print(f"Set theme 'wallust' in {TUI_PATH}")
 
 

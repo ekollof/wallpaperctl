@@ -75,3 +75,43 @@ def test_generated_theme_muted_text_is_legible(
     assert theme["theme"]["textMuted"]["dark"] == "wal_text_muted_dark"
     assert theme["theme"]["syntaxComment"]["dark"] == "wal_comment_dark"
     assert theme["theme"]["diffContext"]["dark"] == "wal_comment_dark"
+
+
+def test_write_json_is_atomic(tmp_path: Path, mod: ModuleType) -> None:
+    dest = tmp_path / "out.json"
+    mod._write_json(dest, {"ok": True})
+    assert json.loads(dest.read_text()) == {"ok": True}
+    assert not (tmp_path / ".out.json.tmp").exists()
+
+
+def test_set_tui_theme_registers_plugin_when_present(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mod: ModuleType
+) -> None:
+    tui_path = tmp_path / "tui.json"
+    plugin = tmp_path / "plugins" / "wallust-hot-reload.ts"
+    plugin.parent.mkdir()
+    plugin.write_text("// plugin\n")
+    tui_path.write_text(json.dumps({"scroll_speed": 2, "plugin": ["keep.me"]}))
+    monkeypatch.setattr(mod, "TUI_PATH", tui_path)
+    monkeypatch.setattr(mod, "OPENCODE_PLUGIN_PATH", plugin)
+
+    mod.set_tui_theme()
+
+    tui = json.loads(tui_path.read_text())
+    assert tui["theme"] == "wallust"
+    assert tui["scroll_speed"] == 2
+    assert tui["plugin"] == ["keep.me", mod.OPENCODE_PLUGIN_SPEC]
+
+
+def test_set_tui_theme_skips_plugin_when_file_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mod: ModuleType
+) -> None:
+    tui_path = tmp_path / "tui.json"
+    monkeypatch.setattr(mod, "TUI_PATH", tui_path)
+    monkeypatch.setattr(mod, "OPENCODE_PLUGIN_PATH", tmp_path / "missing.ts")
+
+    mod.set_tui_theme()
+
+    tui = json.loads(tui_path.read_text())
+    assert tui["theme"] == "wallust"
+    assert "plugin" not in tui
