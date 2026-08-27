@@ -129,6 +129,41 @@ def pgrep_full(pattern: str) -> bool:
     return False
 
 
+_WM_NAME_CACHE: dict[str, str] = {}
+
+
+def wm_x11_name() -> str:
+    """Name of the running X11 window manager ("" when unknown).
+
+    Reads WM_NAME off the _NET_SUPPORTING_WM_CHECK client window. Lets
+    callers special-case WMs with known quirks (e.g. EXWM vs xwinwrap).
+    """
+    if "wm" in _WM_NAME_CACHE:
+        return _WM_NAME_CACHE["wm"]
+    name = ""
+    if have("xprop"):
+        r = run(
+            ["xprop", "-root", "-notype", "_NET_SUPPORTING_WM_CHECK"], timeout=5
+        )
+        match = re.search(r"window id #\s*(0x[0-9a-fA-F]+)", r.stdout)
+        if r.returncode == 0 and match:
+            probe = run(
+                ["xprop", "-id", match.group(1), "-notype", "_NET_WM_NAME"],
+                timeout=5,
+            )
+            quoted = re.search(r'_NET_WM_NAME[^=]*=\s*"([^"]*)"', probe.stdout)
+            if probe.returncode == 0 and quoted:
+                name = quoted.group(1)
+    _WM_NAME_CACHE["wm"] = name
+    log.debug("Detected X11 window manager: %s", name or "(unknown)")
+    return name
+
+
+def reset_wm_name_cache() -> None:
+    """Forget cached WM detection (tests, WM switches mid-process)."""
+    _WM_NAME_CACHE.clear()
+
+
 def sanitize_string(s: str) -> str:
     s = s.replace("\n", "").replace("/", "").replace("@", "")
     s = s.replace(" ", "_")

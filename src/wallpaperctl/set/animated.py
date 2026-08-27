@@ -13,16 +13,24 @@ from pathlib import Path
 from wallpaperctl.context import WallpaperContext
 from wallpaperctl.set.base import debug_set
 from wallpaperctl.set.plasma import PlasmaSetter
-from wallpaperctl.util import have, run
+from wallpaperctl.util import have, run, wm_x11_name
 
 # Shared mpv playback options for both backends: aspect-preserving letterbox
-# with an opaque black background (never crop, never show what is underneath).
+# with an opaque black background (never crop, never show what is underneath),
+# plus hardware decode and cheap scaling/shading to keep GPU load low.
 _MPV_WALLPAPER_OPTIONS = [
     "--no-audio",
     "--loop-file=inf",
     "--panscan=0",
     "--background=color",
     "--background-color=#000000",
+    "--hwdec=auto-safe",
+    "--vd-lavc-fast",
+    "--scale=bilinear",
+    "--dscale=bilinear",
+    "--cscale=bilinear",
+    "--deband=no",
+    "--dither-depth=no",
 ]
 # Cmdline patterns of wallpaperctl-launched players that may outlive their
 # pid file (crashed runs, manual restarts).
@@ -290,14 +298,17 @@ wait "$FP" || true
             self._state_dir.mkdir(parents=True, exist_ok=True)
             with self._log_file.open("w") as log_fh:
                 for geometry_args in self._x11_geometry_args():
-                    # Do not pass -ov: on EXWM, takase1121 xwinwrap's -ov path
-                    # finds the fullscreen workspace frame and XCreateWindow
-                    # parents onto the Emacs inner window (video becomes a
-                    # "tab", not a root underlay). Without -ov, -fdt sets
-                    # TYPE_DESKTOP on a real root child; EXWM leaves it alone.
+                    # -ov (override-redirect) keeps tiling WMs (qtile, i3, …)
+                    # from managing the wrapper as a client. EXWM is excluded:
+                    # takase1121 xwinwrap's -ov path finds the fullscreen
+                    # workspace frame there and XCreateWindow parents onto the
+                    # Emacs inner window (video becomes a "tab", not a root
+                    # underlay). Without -ov, -fdt sets TYPE_DESKTOP on a real
+                    # root child; EXWM and stacking WMs leave it alone.
                     process = subprocess.Popen(
                         [
                             "xwinwrap",
+                            *self._xwinwrap_flags(),
                             "-b",
                             "-ni",
                             "-s",
@@ -345,6 +356,19 @@ wait "$FP" || true
             return False
         debug_set(self.name, f"xwinwrap started for {len(processes)} output(s)", ctx)
         return True
+
+    @staticmethod
+    def _xwinwrap_flags() -> list[str]:
+        """Extra xwinwrap flags; ["-ov"] unless the WM has known -ov bugs.
+
+        Override-redirect bypasses window management entirely, which is what
+        tiling WMs (qtile ignores _NET_WM_WINDOW_TYPE_DESKTOP) need. Unknown
+        WM name keeps the historical EXWM-safe behaviour.
+        """
+        wm = wm_x11_name()
+        if not wm or wm.lower() == "exwm":
+            return []
+        return ["-ov"]
 
     @staticmethod
     def _x11_geometry_args() -> list[list[str]]:

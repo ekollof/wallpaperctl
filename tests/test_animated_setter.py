@@ -47,6 +47,16 @@ def test_mpvpaper_uses_all_outputs_and_ipc_socket(tmp_path: Path) -> None:
     assert "background-color=#000000" in mpv_options
 
 
+def test_mpv_options_use_hardware_decode_and_cheap_scaling() -> None:
+    from wallpaperctl.set.animated import _MPV_WALLPAPER_OPTIONS
+
+    assert "--hwdec=auto-safe" in _MPV_WALLPAPER_OPTIONS
+    assert "--scale=bilinear" in _MPV_WALLPAPER_OPTIONS
+    assert "--dscale=bilinear" in _MPV_WALLPAPER_OPTIONS
+    assert "--deband=no" in _MPV_WALLPAPER_OPTIONS
+    assert "--dither-depth=no" in _MPV_WALLPAPER_OPTIONS
+
+
 def test_mpvpaper_supports_plasma_wayland() -> None:
     assert AnimatedSetter._wayland_supported(
         WallpaperContext(Path("wall.mp4"), DesktopEnvironment(plasma=True), OpsConfig())
@@ -86,6 +96,7 @@ def test_x11_uses_xwinwrap_and_mpv(tmp_path: Path) -> None:
     with (
         patch.dict(os.environ, {"DISPLAY": ":0", "WAYLAND_DISPLAY": ""}, clear=False),
         patch("wallpaperctl.set.animated.have", return_value=True),
+        patch("wallpaperctl.set.animated.wm_x11_name", return_value=""),
         patch("wallpaperctl.set.animated.subprocess.Popen", return_value=fake) as popen,
         patch("wallpaperctl.set.animated._STARTUP_GRACE", 0),
         patch.object(setter, "_stop_previous"),
@@ -99,12 +110,49 @@ def test_x11_uses_xwinwrap_and_mpv(tmp_path: Path) -> None:
     assert "-ni" in args
     assert "-b" in args
     assert "-fdt" in args
-    assert "-ov" not in args
+    assert "-ov" not in args  # unknown WM keeps EXWM-safe defaults
     assert args[args.index("--") + 1] == "mpv"
     wid_idx = args.index("-wid")
     assert args[wid_idx + 1] == "%WID"
     assert "--panscan=0" in args
     assert "--background=color" in args
+    assert "--hwdec=auto-safe" in args
+
+
+def test_xwinwrap_uses_override_redirect_on_tiling_wms(tmp_path: Path) -> None:
+    setter = AnimatedSetter()
+    ctx = _ctx(tmp_path, wayland=False)
+    fake = _fake_process(1234)
+    with (
+        patch.dict(os.environ, {"DISPLAY": ":0", "WAYLAND_DISPLAY": ""}, clear=False),
+        patch("wallpaperctl.set.animated.have", return_value=True),
+        patch("wallpaperctl.set.animated.wm_x11_name", return_value="qtile"),
+        patch("wallpaperctl.set.animated.subprocess.Popen", return_value=fake) as popen,
+        patch("wallpaperctl.set.animated._STARTUP_GRACE", 0),
+        patch.object(setter, "_stop_previous"),
+        patch.object(setter, "_set_static_underlay", return_value=True),
+        patch.object(setter, "_x11_geometry_args", return_value=[["-g", "1920x1080+0+0"]]),
+    ):
+        assert setter.set_wallpaper(ctx)
+    assert "-ov" in popen.call_args.args[0]
+
+
+def test_xwinwrap_skips_override_redirect_on_exwm(tmp_path: Path) -> None:
+    setter = AnimatedSetter()
+    ctx = _ctx(tmp_path, wayland=False)
+    fake = _fake_process(1234)
+    with (
+        patch.dict(os.environ, {"DISPLAY": ":0", "WAYLAND_DISPLAY": ""}, clear=False),
+        patch("wallpaperctl.set.animated.have", return_value=True),
+        patch("wallpaperctl.set.animated.wm_x11_name", return_value="EXWM"),
+        patch("wallpaperctl.set.animated.subprocess.Popen", return_value=fake) as popen,
+        patch("wallpaperctl.set.animated._STARTUP_GRACE", 0),
+        patch.object(setter, "_stop_previous"),
+        patch.object(setter, "_set_static_underlay", return_value=True),
+        patch.object(setter, "_x11_geometry_args", return_value=[["-g", "1920x1080+0+0"]]),
+    ):
+        assert setter.set_wallpaper(ctx)
+    assert "-ov" not in popen.call_args.args[0]
 
 
 def test_x11_starts_one_wrapper_per_output(tmp_path: Path) -> None:
@@ -114,7 +162,10 @@ def test_x11_starts_one_wrapper_per_output(tmp_path: Path) -> None:
     with (
         patch.dict(os.environ, {"DISPLAY": ":0", "WAYLAND_DISPLAY": ""}, clear=False),
         patch("wallpaperctl.set.animated.have", return_value=True),
-        patch("wallpaperctl.set.animated.subprocess.Popen", side_effect=processes) as popen,
+        patch("wallpaperctl.set.animated.wm_x11_name", return_value=""),
+        patch(
+            "wallpaperctl.set.animated.subprocess.Popen", side_effect=processes
+        ) as popen,
         patch("wallpaperctl.set.animated._STARTUP_GRACE", 0),
         patch.object(setter, "_stop_previous"),
         patch.object(setter, "_set_static_underlay", return_value=True),
@@ -194,6 +245,7 @@ def test_startup_exit_fails_xwinwrap(tmp_path: Path) -> None:
     with (
         patch.dict(os.environ, {"DISPLAY": ":0"}, clear=False),
         patch("wallpaperctl.set.animated.have", return_value=True),
+        patch("wallpaperctl.set.animated.wm_x11_name", return_value=""),
         patch("wallpaperctl.set.animated.subprocess.Popen", return_value=dead),
         patch.object(setter, "_stop_previous"),
         patch.object(setter, "_set_static_underlay", return_value=True),
@@ -221,6 +273,7 @@ def test_x11_sets_still_underlay_before_video(tmp_path: Path) -> None:
     with (
         patch.dict(os.environ, {"DISPLAY": ":0", "WAYLAND_DISPLAY": ""}, clear=False),
         patch("wallpaperctl.set.animated.have", return_value=True),
+        patch("wallpaperctl.set.animated.wm_x11_name", return_value=""),
         patch("wallpaperctl.set.animated.subprocess.Popen", side_effect=track_popen),
         patch("wallpaperctl.set.animated._STARTUP_GRACE", 0),
         patch.object(setter, "_stop_previous"),
