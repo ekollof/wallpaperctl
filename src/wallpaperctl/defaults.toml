@@ -28,6 +28,14 @@ pywalfox = true
 [ops]
 wallust_backend = "wal"
 wallust_palette = "kmeans"
+# Enforce WCAG contrast on the palette after wallust runs (wallust's own
+# check_contrast is only a mild background-relative check). Terminal text
+# slots get wallust_text_contrast, ANSI accents wallust_accent_contrast.
+# Alternative: palette = "ansidark" + color_space = "lchansi" keeps TTY
+# color order; or "harddark16" / "darkcomp16" schemes.
+wallust_fix_contrast = true
+wallust_text_contrast = 4.5
+wallust_accent_contrast = 3.0
 gtk_theme_plasma = "Breeze"
 gtk_theme_xfce = "FlatColor-dark"
 gtk_theme_cinnamon = "Mint-Y"

@@ -21,9 +21,15 @@ log = logging.getLogger("wallpaperctl")
 COLORS_JSON = home() / ".cache" / "wal" / "colors.json"
 
 
+def _channel_lin(value: int) -> float:
+    v = value / 255
+    return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+
+
 def _luma(hex_color: str) -> float:
+    """WCAG relative luminance (linearized sRGB, 0..1)."""
     r, g, b = hex_to_rgb(hex_color)
-    return (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+    return 0.2126 * _channel_lin(r) + 0.7152 * _channel_lin(g) + 0.0722 * _channel_lin(b)
 
 
 def _contrast_ratio(c1: str, c2: str) -> float:

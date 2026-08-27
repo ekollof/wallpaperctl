@@ -90,6 +90,11 @@ class OpsConfig:
 
     wallust_backend: str = "wal"
     wallust_palette: str = "kmeans"
+    # Post-wallust WCAG enforcement on the canonical palette (terminal text,
+    # dim/comments, ANSI accents). See theme/palette_contrast.py.
+    wallust_fix_contrast: bool = True
+    wallust_text_contrast: float = 4.5
+    wallust_accent_contrast: float = 3.0
     gtk_theme_plasma: str = "Breeze"
     gtk_theme_xfce: str = "FlatColor-dark"
     gtk_theme_cinnamon: str = "Mint-Y"

@@ -158,6 +158,11 @@ def test_fetch_animated_downloads_into_animated_dir(
         )
 
     monkeypatch.setattr(fetch_mod.providers, "fetch_video_from_provider", fake_fetch)
+    # pick_video_provider is weighted-random (pexels 70% / pixabay 30%);
+    # pin it so the assertion below is deterministic.
+    monkeypatch.setattr(
+        fetch_mod.providers, "pick_video_provider", lambda tried: "pexels"
+    )
     monkeypatch.setattr(
         fetch_mod, "_download", _fake_download_succeeds(b"x" * 200_000)
     )
