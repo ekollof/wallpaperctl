@@ -1,11 +1,17 @@
 # wallust config for Omarchy (installed by `wallpaperctl setup omarchy`).
 #
-# On Omarchy, wallpaperctl provides the backdrop and the palette; ALL app
-# theming is handed to Omarchy (omarchy theme set/refresh renders every app
-# config from the dynamic theme's colors.toml). This config therefore only
-# generates the pywal-compatible palette files — no app templates and no
-# hooks: the stock wallust config's opencode hook would flip opencode back
-# to theme "wallust", and its kitty hook would fight omarchy's staged theme.
+# Division of labor on Omarchy:
+#   wallpaperctl  → backdrop + palette (this config) + apps omarchy does not
+#                   theme (starship, GTK FlatColor, rofi, vim, weechat, …)
+#   Omarchy       → all its own app theming, rendered from the dynamic
+#                   theme's colors.toml via `omarchy theme refresh`
+#
+# Templates that would fight Omarchy are deliberately absent: kitty and btop
+# (omarchy ships staged/symlinked themes), hyprland/hyprpaper/waybar (omarchy
+# owns the compositor + shell), COSMIC (not applicable), and there are NO
+# hooks — the stock config's opencode hook flipped opencode back to theme
+# "wallust" on every wallpaper change, and the kitty hook SIGUSR1-reloaded
+# kitty per run.
 #
 # The full template set lives in wallust.toml (used off Omarchy); switch back
 # with `wallpaperctl setup wallust` if you ever leave Omarchy.
@@ -24,3 +30,21 @@ pywal = true
 # Palette outputs consumed by wallpaperctl (OmarchyThemeOp reads colors.json).
 colors = { template = "colors", target = "~/.cache/wal/colors", pywal = true }
 json = { template = "colors.json", target = "~/.cache/wal/colors.json", pywal = true }
+
+# Not omarchy-managed — keep palette-driven:
+sequence = { template = "colors.sh", target = "~/.cache/wal/colors.sh", new_engine = true }
+css = { template = "colors.css", target = "~/.cache/wal/colors.css", new_engine = true }
+vim = { template = "colors-wal.vim", target = "~/.cache/wal/colors-wal.vim", pywal = true }
+xrdb = { template = "colors.Xresources", target = "~/.cache/wal/colors.Xresources", pywal = true }
+rofi = { template = "colors-rofi.rasi", target = "~/.config/rofi/wallust/colors-rofi.rasi", new_engine = true }
+starship = { template = "starship.toml", target = "~/.config/starship.toml"}
+awesome = { template = "awesome-colors.lua", target = "~/.cache/wal/awesome-colors.lua", new_engine = true }
+oomox = { template = "colors-oomox", target = "~/.cache/wal/colors-oomox", pywal = true }
+gtk2 = { template = "gtk2.base", target = "~/.local/share/themes/FlatColor/gtk-2.0/gtkrc", new_engine = true }
+gtk3 = { template = "gtk3.0.base", target = "~/.local/share/themes/FlatColor/gtk-3.0/gtk.css", pywal = true }
+gtk320 = { template = "gtk3.20.base", target = "~/.local/share/themes/FlatColor/gtk-3.20/gtk.css", pywal = true }
+gtk4 = { template = "gtk4.0.base", target = "~/.config/gtk-4.0/gtk.css", new_engine = true }
+neomutt = { template = "pywal.muttrc", target = "~/.cache/wal/colors.muttrc.unused", new_engine = true }
+weechat = { template = "colors-weechat.conf", target = "~/.cache/wal/colors-weechat.conf", new_engine = true }
+xonsh = { template = "xonshrc.py", target = "~/.xonshrc" }
+steam = { template = "steam.css", target = "~/.cache/wallust/steam-webkit.css", new_engine = true }

@@ -661,11 +661,13 @@ def test_omarchy_wallust_config_vendored():
     data = tomllib.loads(src.read_text(encoding="utf-8"))
     assert "hooks" not in data
     tpl = data.get("templates", {})
-    assert set(tpl) == {"colors", "json"}
-    assert data["backend"] == "wal" and data["pywal"] is True
     targets = " ".join(entry["target"] for entry in tpl.values())
-    for banned in ("kitty", "btop", "opencode", "starship"):
+    # omarchy-managed targets must not be wallust-rendered
+    for banned in ("kitty", "btop", "opencode", "hypr", "waybar", "cosmic"):
         assert banned not in targets
+    # apps omarchy does not theme stay palette-driven (incl. starship)
+    for kept in ("colors.json", "starship", "gtk-3.0"):
+        assert kept in targets
 
 
 def test_install_omarchy_wallust_config(monkeypatch, tmp_path):

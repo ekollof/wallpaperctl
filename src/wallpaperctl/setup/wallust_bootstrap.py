@@ -64,8 +64,13 @@ def install_omarchy_wallust_config() -> int:
             print("wallust.toml: already the Omarchy palette-only variant")
             return 0
         backup = target.with_suffix(".toml.bak-wallpaperctl")
-        shutil.copy2(target, backup)
-        print(f"backup:  {backup}")
+        if not backup.exists():
+            # Keep the FIRST backup (the pre-Omarchy config); later swaps
+            # would otherwise overwrite it with intermediate variants.
+            shutil.copy2(target, backup)
+            print(f"backup:  {backup}")
+        else:
+            print(f"backup:  {backup} (kept)")
     shutil.copy2(src, target)
     print(f"wrote:   {target}  (palette-only; app theming handled by Omarchy)")
     return 0
