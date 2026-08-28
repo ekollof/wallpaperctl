@@ -405,6 +405,11 @@ class OmarchyThemeOp:
         # behind. Nudge every running opencode so the fresh palette lands.
         self._publish_opencode_theme(ctx)
         self._signal_opencode(ctx)
+        # Restore the stable default for FUTURE sessions: running ones have
+        # already resolved the hashed theme above, and new sessions starting
+        # with "omarchy" read the current omarchy.json (fresh palette) at
+        # startup — so the picker doesn't stay parked on a hash name.
+        self._reset_opencode_theme_default(ctx)
         debug_op(self.name, "theme refreshed via omarchy", ctx)
         return True
 
@@ -491,6 +496,30 @@ class OmarchyThemeOp:
             f"SIGUSR2 → opencode (rc={r.returncode})",
             ctx,
         )
+
+    def _reset_opencode_theme_default(self, ctx: WallpaperContext) -> None:
+        """Point tui.json back at the stable "omarchy" theme for future sessions.
+
+        Running sessions already resolved the hashed theme published above and
+        keep following via the plugin; tui.json is only read on (re)start, and
+        "omarchy" always maps to the current omarchy.json content.
+        """
+        import json as json_mod
+        import time
+
+        time.sleep(2)  # let SIGUSR2 reloads finish before touching tui.json
+        tui_path = home() / ".config" / "opencode" / "tui.json"
+        try:
+            tui = json_mod.loads(tui_path.read_text(encoding="utf-8"))
+            if not isinstance(tui, dict) or tui.get("theme") == "omarchy":
+                return
+            tui["theme"] = "omarchy"
+            tmp = tui_path.with_name(".tui.json.tmp")
+            tmp.write_text(json_mod.dumps(tui, indent=2) + "\n", encoding="utf-8")
+            os.replace(tmp, tui_path)
+            debug_op(self.name, "tui.json theme reset to 'omarchy' for future sessions", ctx)
+        except (OSError, ValueError) as e:
+            debug_op(self.name, f"could not reset tui.json theme: {e}", ctx)
 
 
 def _read_text(path: Path) -> str | None:

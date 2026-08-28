@@ -75,7 +75,9 @@
     it as its own) and selects that name in tui.json → SIGUSR2 resolves a NEW theme
     name → fresh palette guaranteed. Keeps the last few hashed files — deleting the
     one a session is selected on makes it unresolvable (stuck until manual
-    re-selection); self-heals stray wallust opencode registration (`_heal_opencode`)
+    re-selection). After the signal, tui.json's theme resets to the stable
+    `"omarchy"` name for future sessions (running ones already resolved the hash);
+    self-heals stray wallust opencode registration (`_heal_opencode`)
   - self-heals stray wallust opencode registration (`_heal_opencode`)
   - run `omarchy theme refresh` (fallback: `OMARCHY_THEME_SKIP_BACKGROUND=1
     omarchy theme set dynamic-wallpapers`), timeout `omarchy_timeout`

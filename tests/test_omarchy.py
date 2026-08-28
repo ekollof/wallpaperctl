@@ -40,6 +40,7 @@ def _no_real_process_signals(monkeypatch):
     monkeypatch.setattr(
         "wallpaperctl.theme.omarchy.have", lambda cmd: cmd in ("pkill", "wallust")
     )
+    monkeypatch.setattr("time.sleep", lambda seconds: None)
 
 # ── helpers / state ──────────────────────────────────────────────────────
 
@@ -890,7 +891,13 @@ def test_op_run_selects_hashed_opencode_theme(monkeypatch, tmp_path):
     tui = json.loads(
         (tmp_path / ".config" / "opencode" / "tui.json").read_text(encoding="utf-8")
     )
-    assert tui["theme"].startswith("omarchy-") and len(tui["theme"]) == len("omarchy") + 8 + 1
+    # hashed theme resolved by running sessions; stable default restored for
+    # future sessions
+    assert tui["theme"] == "omarchy"
+    themes = tmp_path / ".config" / "opencode" / "themes"
+    assert any(
+        p.name.startswith("omarchy-") for p in themes.glob("omarchy-*.json")
+    )
 
 
 # ── registration ─────────────────────────────────────────────────────────
