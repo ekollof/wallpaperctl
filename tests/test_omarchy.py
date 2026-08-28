@@ -536,7 +536,7 @@ def test_setup_removes_wallust_opencode_plugin(monkeypatch, tmp_path, capsys):
         tui = json.loads((cfg / "tui.json").read_text(encoding="utf-8"))
         assert "./plugins/wallust-hot-reload.ts" not in tui["plugin"]
         assert "other.ts" in tui["plugin"]
-        assert tui.get("theme") == "omarchy"
+        assert tui.get("theme") == "system"
 
 
 def test_remove_opencode_plugin_noop_when_absent(monkeypatch, tmp_path, capsys):
@@ -559,7 +559,7 @@ def test_remove_opencode_plugin_fixes_orphaned_theme(monkeypatch, tmp_path):
 
     assert remove_opencode_plugin()
     tui = json.loads((cfg / "tui.json").read_text(encoding="utf-8"))
-    assert tui["theme"] == "omarchy"
+    assert tui["theme"] == "system"
     assert tui["plugin"] == ["other.ts"]
 
 
@@ -793,92 +793,19 @@ def test_op_run_no_signal_when_refresh_skipped(monkeypatch, tmp_path):
         assert runs.count(["pkill", "-USR2", "-x", "opencode"]) == 1
 
 
-# ── opencode theme publishing (hashed name) ──────────────────────────────
+# ── opencode system-theme signalling ────────────────────────────────────
 
 
-def test_fnv1a8_matches_plugin_hash():
-    # vector produced by omarchy-theme.ts's contentHash() (node Math.imul)
-    assert tom._fnv1a8("accent-test") == "abaacf76"
-
-
-def test_publish_opencode_theme_stages_hash_and_selects(monkeypatch, tmp_path):
-    _fake_home(monkeypatch, tmp_path)
-    themes = tmp_path / ".config" / "opencode" / "themes"
-    themes.mkdir(parents=True)
-    content = '{"theme": {"primary": "#123456"}}'
-    (themes / "omarchy.json").write_text(content, encoding="utf-8")
-    (themes / "omarchy-deadbeef.json").write_text("stale", encoding="utf-8")
-    tui = tmp_path / ".config" / "opencode" / "tui.json"
-    tui.write_text(json.dumps({"theme": "omarchy", "plugin": ["x.ts"]}), encoding="utf-8")
-
-    tom.OmarchyThemeOp()._publish_opencode_theme(_ctx(tmp_path))
-
-    expected = f"omarchy-{tom._fnv1a8(content)}"
-    assert (themes / f"{expected}.json").is_file()
-    tui_data = json.loads(tui.read_text(encoding="utf-8"))
-    assert tui_data["theme"] == expected
-    assert tui_data["plugin"] == ["x.ts"]
-
-
-def test_publish_keeps_recent_hashed_themes(monkeypatch, tmp_path):
-    # a session may still be selected on an older hash — do not delete it
-    _fake_home(monkeypatch, tmp_path)
-    themes = tmp_path / ".config" / "opencode" / "themes"
-    themes.mkdir(parents=True)
-    content = '{"theme": {"primary": "#123456"}}'
-    (themes / "omarchy.json").write_text(content, encoding="utf-8")
-    for i, name in enumerate(("omarchy-11111111", "omarchy-22222222", "omarchy-33333333")):
-        p = themes / f"{name}.json"
-        p.write_text("old", encoding="utf-8")
-        import os
-
-        os.utime(p, (100000 + i, 100000 + i))  # oldest first
-
-    tom.OmarchyThemeOp()._publish_opencode_theme(_ctx(tmp_path))
-
-    remaining = sorted(p.name for p in themes.glob("omarchy-*.json"))
-    # current + 2 most recent kept, oldest pruned
-    assert f"omarchy-{tom._fnv1a8(content)}.json" in remaining
-    assert "omarchy-33333333.json" in remaining
-    assert "omarchy-22222222.json" in remaining
-    assert "omarchy-11111111.json" not in remaining
-
-
-def test_publish_opencode_theme_noop_when_selected(monkeypatch, tmp_path):
-    _fake_home(monkeypatch, tmp_path)
-    themes = tmp_path / ".config" / "opencode" / "themes"
-    themes.mkdir(parents=True)
-    content = '{"theme": {"primary": "#123456"}}'
-    (themes / "omarchy.json").write_text(content, encoding="utf-8")
-    tui = tmp_path / ".config" / "opencode" / "tui.json"
-    name = f"omarchy-{tom._fnv1a8(content)}"
-    (themes / f"{name}.json").write_text(content, encoding="utf-8")
-    tui.write_text(json.dumps({"theme": name}), encoding="utf-8")
-
-    tom.OmarchyThemeOp()._publish_opencode_theme(_ctx(tmp_path))
-    assert json.loads(tui.read_text(encoding="utf-8"))["theme"] == name
-
-
-def test_op_run_selects_hashed_opencode_theme(monkeypatch, tmp_path):
+def test_op_run_leaves_tui_json_untouched(monkeypatch, tmp_path):
+    # stock omarchy: opencode runs the terminal-adaptive "system" theme;
+    # the theme op must not rewrite the theme selection
     _fake_home(monkeypatch, tmp_path)
     _theme_state(tmp_path, THEME_SLUG)
-    wal = tmp_path / ".cache" / "wal"
-    wal.mkdir(parents=True)
-    (wal / "colors.json").write_text(json.dumps(_palette()), encoding="utf-8")
+    tui = tmp_path / ".config" / "opencode" / "tui.json"
+    tui.parent.mkdir(parents=True)
+    tui.write_text(json.dumps({"theme": "system"}), encoding="utf-8")
 
     def fake_run_omarchy(args, **kwargs):
-        # emulate omarchy-theme-set + -opencode: render staged theme, then
-        # copy it to the live opencode themes dir
-        staged = (
-            tmp_path / ".local" / "state" / "omarchy" / "current" / "theme" / "opencode.json"
-        )
-        staged.parent.mkdir(parents=True, exist_ok=True)
-        staged.write_text(json.dumps({"theme": {"primary": "#abcdef"}}), encoding="utf-8")
-        live_dir = tmp_path / ".config" / "opencode" / "themes"
-        live_dir.mkdir(parents=True, exist_ok=True)
-        (live_dir / "omarchy.json").write_text(
-            json.dumps({"theme": {"primary": "#abcdef"}}), encoding="utf-8"
-        )
         return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     with (
@@ -888,16 +815,7 @@ def test_op_run_selects_hashed_opencode_theme(monkeypatch, tmp_path):
     ):
         assert OmarchyThemeOp().run(_ctx(tmp_path))
 
-    tui = json.loads(
-        (tmp_path / ".config" / "opencode" / "tui.json").read_text(encoding="utf-8")
-    )
-    # hashed theme resolved by running sessions; stable default restored for
-    # future sessions
-    assert tui["theme"] == "omarchy"
-    themes = tmp_path / ".config" / "opencode" / "themes"
-    assert any(
-        p.name.startswith("omarchy-") for p in themes.glob("omarchy-*.json")
-    )
+    assert json.loads(tui.read_text(encoding="utf-8"))["theme"] == "system"
 
 
 # ── registration ─────────────────────────────────────────────────────────

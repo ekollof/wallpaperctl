@@ -64,20 +64,14 @@
   - skip refresh when rendered palette unchanged (`omarchy_skip_unchanged`, default on)
   - refresh can be disabled entirely (`omarchy_refresh_apps`, default on → colors.toml
     staged only, applied on next manual theme refresh/re-selection)
-  - **SIGUSR2 → opencode after every successful refresh** (`omarchy-restart-opencode`
-    when present, else `pkill -USR2 -x opencode`): the omarchy-theme.ts watcher
-    intermittently misses omarchy.json updates under kitty reload races, leaving
-    sessions stuck on a stale `omarchy-<hash>` theme; SIGUSR2 forces a config+theme
-    reload so every session lands on the fresh palette (live-verified)
-  - **hashed theme publishing**: opencode caches theme content by NAME, so a plain
-    "omarchy" reload keeps stale colors; the op publishes the live omarchy.json as
-    `omarchy-<fnv1a8>.json` (same hash algorithm as the plugin, so its prune treats
-    it as its own) and selects that name in tui.json → SIGUSR2 resolves a NEW theme
-    name → fresh palette guaranteed. Keeps the last few hashed files — deleting the
-    one a session is selected on makes it unresolvable (stuck until manual
-    re-selection). After the signal, tui.json's theme resets to the stable
-    `"omarchy"` name for future sessions (running ones already resolved the hash);
-    self-heals stray wallust opencode registration (`_heal_opencode`)
+  - **opencode follows via the stock "system" theme**: `setup omarchy` removes the
+    wallust hot-reload plugin and resets tui.json to `theme: "system"`
+    (terminal-adaptive — opencode follows the terminal palette that omarchy
+    reloads). After each successful `omarchy theme refresh`, wallpaperctl sends
+    SIGUSR2 to running opencode sessions (`omarchy-restart-opencode`, fallback
+    `pkill -USR2 -x opencode`) so the system theme re-resolves against the new
+    terminal colors. Self-heals stray wallust registration (`_heal_opencode`).
+    NOTE: SIGUSR2 briefly redraws TUIs — that is stock omarchy behavior.
   - self-heals stray wallust opencode registration (`_heal_opencode`)
   - run `omarchy theme refresh` (fallback: `OMARCHY_THEME_SKIP_BACKGROUND=1
     omarchy theme set dynamic-wallpapers`), timeout `omarchy_timeout`

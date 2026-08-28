@@ -295,9 +295,11 @@ def _verify_omarchy(ops: OpsConfig) -> bool:
         except (OSError, ValueError):
             tui = {}
         sel = tui.get("theme")
-        good = isinstance(sel, str) and re.fullmatch(r"omarchy(-[0-9a-f]{8})?", sel)
+        # stock omarchy: "system" (terminal-adaptive); tolerate legacy names
+        good = isinstance(sel, str) and sel != "wallust" and sel != ""
         mark = "✓" if good else "!"
-        print(f"{mark} tui.json theme: {sel or '(none)'}")
+        print(f"{mark} tui.json theme: {sel or '(none)'}"
+              f"{' (stock: system)' if sel != 'system' else ''}")
         if not good:
             print("  → fix: wallpaperctl setup omarchy (or omarchy theme refresh)")
             ok = False

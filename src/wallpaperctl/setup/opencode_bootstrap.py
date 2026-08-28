@@ -185,8 +185,10 @@ def remove_opencode_plugin() -> bool:
                     and not (isinstance(p, list) and p and p[0] == PLUGIN_SPEC)
                 ]
             if tui.get("theme") == "wallust":
-                # our own marker; omarchy owns theming in this context
-                tui["theme"] = "omarchy"
+                # our own marker; omarchy owns theming in this context and
+                # stock omarchy runs opencode with the terminal-adaptive
+                # "system" theme
+                tui["theme"] = "system"
             _write_json(tui_path, tui)
             print(f"updated: {tui_path}  (wallust plugin entry removed)")
             removed = True
