@@ -295,9 +295,10 @@ def _verify_omarchy(ops: OpsConfig) -> bool:
         except (OSError, ValueError):
             tui = {}
         sel = tui.get("theme")
-        mark = "✓" if sel == "omarchy" else "!"
+        good = isinstance(sel, str) and re.fullmatch(r"omarchy(-[0-9a-f]{8})?", sel)
+        mark = "✓" if good else "!"
         print(f"{mark} tui.json theme: {sel or '(none)'}")
-        if sel != "omarchy":
+        if not good:
             print("  → fix: wallpaperctl setup omarchy (or omarchy theme refresh)")
             ok = False
         plugins = tui.get("plugin") or []

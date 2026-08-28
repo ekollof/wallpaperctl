@@ -403,9 +403,80 @@ class OmarchyThemeOp:
         # watcher misses events in some setups (observed under kitty reloads
         # racing the theme-set post commands), leaving sessions one palette
         # behind. Nudge every running opencode so the fresh palette lands.
+        self._publish_opencode_theme(ctx)
         self._signal_opencode(ctx)
         debug_op(self.name, "theme refreshed via omarchy", ctx)
         return True
+
+    def _publish_opencode_theme(self, ctx: WallpaperContext) -> None:
+        """Install the live omarchy.json under its content-hashed theme name.
+
+        opencode caches theme content by NAME: re-reading the same theme name
+        (plain SIGUSR2 reload of "omarchy") keeps the stale registry entry, so
+        a changed omarchy.json never reaches sessions that missed the TUI
+        plugin's file event. Writing the content under omarchy-<hash>.json and
+        selecting that name in tui.json forces a fresh resolve on reload — the
+        same trick omarchy's own plugin uses, with the same FNV-1a hash so the
+        plugin's prune logic treats our file as its own.
+        """
+        import json as json_mod
+
+        themes_dir = home() / ".config" / "opencode" / "themes"
+        live = themes_dir / "omarchy.json"
+        if not live.is_file():
+            return
+        try:
+            text = live.read_text(encoding="utf-8")
+            json_mod.loads(text)
+        except (OSError, ValueError):
+            return
+
+        name = f"omarchy-{_fnv1a8(text)}"
+        target = themes_dir / f"{name}.json"
+        if not target.is_file():
+            try:
+                target.write_text(text, encoding="utf-8")
+            except OSError as e:
+                debug_op(self.name, f"could not stage {target}: {e}", ctx)
+                return
+
+        # Keep the last few hashed themes: a running session may still be
+        # SELECTED on an older one, and deleting its file makes the theme
+        # unresolvable on SIGUSR2 reloads (session falls back and looks
+        # stuck until manually re-selected). The omarchy plugin prunes again
+        # after its own successful applies.
+        hashed = sorted(
+            (p for p in themes_dir.glob("omarchy-*.json") if p != target),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for stale in hashed[2:]:
+            try:
+                stale.unlink()
+            except OSError:
+                pass
+
+        tui_path = home() / ".config" / "opencode" / "tui.json"
+        try:
+            if tui_path.is_file():
+                tui = json_mod.loads(tui_path.read_text(encoding="utf-8"))
+                if not isinstance(tui, dict):
+                    tui = {}
+            else:
+                tui = {"$schema": "https://opencode.ai/tui.json"}
+        except (OSError, ValueError):
+            return
+        if tui.get("theme") == name:
+            return
+        tui["theme"] = name
+        try:
+            tmp = tui_path.with_name(".tui.json.tmp")
+            tmp.write_text(json_mod.dumps(tui, indent=2) + "\n", encoding="utf-8")
+            os.replace(tmp, tui_path)
+        except OSError as e:
+            debug_op(self.name, f"could not update tui.json: {e}", ctx)
+            return
+        debug_op(self.name, f"opencode theme → {name}", ctx)
 
     def _signal_opencode(self, ctx: WallpaperContext) -> None:
         if have("omarchy-restart-opencode"):
@@ -427,6 +498,15 @@ def _read_text(path: Path) -> str | None:
         return path.read_text(encoding="utf-8")
     except OSError:
         return None
+
+
+def _fnv1a8(text: str) -> str:
+    """FNV-1a 32-bit, hex-8 — mirrors omarchy-theme.ts's contentHash()."""
+    h = 0x811C9DC5
+    for ch in text:
+        h ^= ord(ch)
+        h = (h * 0x01000193) & 0xFFFFFFFF
+    return f"{h:08x}"
 
 
 def fallback_palette() -> dict:

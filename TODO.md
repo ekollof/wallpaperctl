@@ -69,6 +69,13 @@
     intermittently misses omarchy.json updates under kitty reload races, leaving
     sessions stuck on a stale `omarchy-<hash>` theme; SIGUSR2 forces a config+theme
     reload so every session lands on the fresh palette (live-verified)
+  - **hashed theme publishing**: opencode caches theme content by NAME, so a plain
+    "omarchy" reload keeps stale colors; the op publishes the live omarchy.json as
+    `omarchy-<fnv1a8>.json` (same hash algorithm as the plugin, so its prune treats
+    it as its own) and selects that name in tui.json → SIGUSR2 resolves a NEW theme
+    name → fresh palette guaranteed. Keeps the last few hashed files — deleting the
+    one a session is selected on makes it unresolvable (stuck until manual
+    re-selection); self-heals stray wallust opencode registration (`_heal_opencode`)
   - self-heals stray wallust opencode registration (`_heal_opencode`)
   - run `omarchy theme refresh` (fallback: `OMARCHY_THEME_SKIP_BACKGROUND=1
     omarchy theme set dynamic-wallpapers`), timeout `omarchy_timeout`
@@ -129,8 +136,10 @@
       theme-op order
 
 ### Verification (Omarchy)
-- [x] `pytest` (216 passed), `ruff check src tests` (clean; suite is signal-safe —
+- [x] `pytest` (221 passed), `ruff check src tests` (clean; suite is signal-safe —
       no test can SIGUSR2/SIGUSR1 real processes)
+- [x] Live: animated wallpaper cycle → palette chain updates (colors.toml →
+      omarchy.json → hashed theme published + selected → SIGUSR2), verified at 16:03
 - [x] Live: `wallpaperctl detect` → `hyprland+omarchy`; `setup check` shows Omarchy section
 - [x] Live: `setup omarchy` creates + activates "Dynamic Wallpapers"; `omarchy theme list`
       and the switcher picker show it (preview.png fix)
