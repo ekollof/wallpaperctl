@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sys
+from pathlib import Path
 
 from wallpaperctl.config import OpsConfig
 from wallpaperctl.util import have, home, run
@@ -23,6 +25,9 @@ def run_verify(what: str = "all", *, ops: OpsConfig | None = None) -> int:
     if what in ("all", "wal", "colors", "wallust"):
         if not _verify_wal():
             ok = False
+    if what in ("all", "omarchy"):
+        if not _verify_omarchy(ops):
+            ok = False
 
     if what not in (
         "all",
@@ -33,9 +38,10 @@ def run_verify(what: str = "all", *, ops: OpsConfig | None = None) -> int:
         "wal",
         "colors",
         "wallust",
+        "omarchy",
     ):
         print(f"Unknown verify target: {what}", file=sys.stderr)
-        print("Use: icons | cinnamon | wal | all", file=sys.stderr)
+        print("Use: icons | cinnamon | wal | omarchy | all", file=sys.stderr)
         return 1
 
     return 0 if ok else 1
@@ -191,6 +197,128 @@ def _verify_wal() -> bool:
     print(f"{'✓' if xres.is_file() else '!'} colors.Xresources: "
           f"{'present' if xres.is_file() else 'missing'}")
     return True
+
+
+def _mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _verify_omarchy(ops: OpsConfig) -> bool:
+    """Verify the Omarchy dynamic-theme hand-off chain, stage by stage."""
+    from wallpaperctl.omarchy import (
+        THEME_SLUG,
+        current_theme_name,
+        is_omarchy_shell_running,
+        omarchy_available,
+        user_theme_dir,
+    )
+    from wallpaperctl.theme.omarchy import build_colors_mapping
+    from wallpaperctl.theme.pywalfox import load_colors_json
+
+    print()
+    print("=== Omarchy dynamic theme chain ===")
+    print()
+    if not omarchy_available():
+        print("✗ omarchy not present on this system")
+        return False
+
+    ok = True
+    slug = ops.omarchy_theme_slug or THEME_SLUG
+    theme = current_theme_name()
+    mark = "✓" if theme == slug else "✗"
+    print(f"{mark} active theme: {theme or '(none)'}")
+    if theme != slug:
+        print(f"  → wallpaperctl only retints while '{slug}' is active")
+        print(f"    (switch back: omarchy theme set {slug})")
+        return False
+    print(f"{'✓' if is_omarchy_shell_running() else '!'} omarchy-shell: "
+          f"{'running' if is_omarchy_shell_running() else 'NOT running'}")
+
+    # 1. wallust palette vs current wallpaper
+    wallpaper = home() / ".wallpaper"
+    colors_json = home() / ".cache" / "wal" / "colors.json"
+    stale = (
+        wallpaper.is_file()
+        and colors_json.is_file()
+        and _mtime(colors_json) + 2 < _mtime(wallpaper)
+    )
+    if stale:
+        print("✗ wallust palette: OLDER than current wallpaper — wallust failed")
+        print(f"  → check: wallust run --backend wal --palette kmeans {wallpaper}")
+        ok = False
+    else:
+        print("✓ wallust palette: current")
+
+    # 2. colors.toml derived from the palette
+    theme_dir = user_theme_dir(slug)
+    colors_toml = theme_dir / "colors.toml"
+    colors = load_colors_json() or {}
+    if colors_json.is_file() and colors:
+        expected = build_colors_mapping(colors)
+        accent = expected.get("accent", "")
+        text = colors_toml.read_text(encoding="utf-8") if colors_toml.is_file() else ""
+        mark = "✓" if f'accent = "{accent.lower()}' in text.lower() else "✗"
+        current = "missing"
+        if "accent = " in text:
+            current = text.split("accent = ")[1].splitlines()[0]
+        print(f"{mark} colors.toml accent: {current}")
+        if mark == "✗":
+            print(f"  → expected accent {accent}; re-run: wallpaperctl -R")
+            ok = False
+    else:
+        print("✗ colors.toml missing")
+        ok = False
+
+    # 3. staged + live opencode theme
+    staged = home() / ".local" / "state" / "omarchy" / "current" / "theme" / "opencode.json"
+    live = home() / ".config" / "opencode" / "themes" / "omarchy.json"
+    for label, path in (("staged", staged), ("live", live)):
+        if not path.is_file():
+            print(f"✗ opencode theme ({label}): missing — {path}")
+            ok = False
+            continue
+        fresh = not colors_toml.is_file() or _mtime(path) + 2 >= _mtime(colors_toml)
+        print(f"{'✓' if fresh else '!'} opencode theme ({label}): "
+              f"{'fresh' if fresh else 'OLDER than colors.toml'}")
+        if not fresh and label == "live":
+            print("  → omarchy theme refresh did not sync opencode; try: omarchy theme refresh")
+            ok = False
+
+    # 4. opencode registration + leftovers
+    tui_path = home() / ".config" / "opencode" / "tui.json"
+    if tui_path.is_file():
+        try:
+            tui = json.loads(tui_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            tui = {}
+        sel = tui.get("theme")
+        mark = "✓" if sel == "omarchy" else "!"
+        print(f"{mark} tui.json theme: {sel or '(none)'}")
+        if sel != "omarchy":
+            print("  → fix: wallpaperctl setup omarchy (or omarchy theme refresh)")
+            ok = False
+        plugins = tui.get("plugin") or []
+        leftover = [p for p in plugins if "wallust-hot-reload" in str(p)]
+        if leftover:
+            print("✗ tui.json still lists the wallust hot-reload plugin")
+            ok = False
+    wallust_theme = home() / ".config" / "opencode" / "themes" / "wallust.json"
+    if wallust_theme.exists():
+        print("✗ themes/wallust.json still present (stale wallust theming)")
+        print("  → fix: wallpaperctl setup omarchy")
+        ok = False
+    else:
+        print("✓ no wallust opencode leftovers")
+
+    # 5. guidance for sessions
+    print()
+    print("Live opencode sessions retint only when they were started with theme")
+    print("'omarchy' (omarchy's owned() gate). Sessions started before the last")
+    print("tui.json fix keep 'wallust' selected and are ignored — restart them once.")
+    return ok
 
 
 def _gget(schema: str, key: str) -> str:

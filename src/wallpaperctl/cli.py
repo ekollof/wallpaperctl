@@ -421,13 +421,13 @@ def _subcommand_main(argv: list[str]) -> int:
     )
     p_verify = sub.add_parser(
         "verify",
-        help="Verify dynamic icons / cinnamon theme / wallust colors",
+        help="Verify dynamic icons / cinnamon theme / wallust colors / omarchy chain",
     )
     p_verify.add_argument(
         "target",
         nargs="?",
         default="all",
-        choices=["all", "icons", "cinnamon", "wal"],
+        choices=["all", "icons", "cinnamon", "wal", "omarchy"],
         help="What to verify (default: all)",
     )
     sub.add_parser(
