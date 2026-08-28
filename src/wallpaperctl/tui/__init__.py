@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from wallpaperctl.config import OpsConfig
+
 
 def run_manage_tui(
     *,
@@ -11,11 +13,14 @@ def run_manage_tui(
     no_kitty: bool = False,
     warm_cache: bool = False,
     warm_only: bool = False,
+    videos: bool = False,
 ) -> int:
     """Launch the manage TUI. Returns process exit code.
 
     *warm_cache* / *warm_only*: pre-build Kitty PNG and/or sixel previews under
     ``~/.cache/wallpaperctl/previews`` (also done in the background on TUI start).
+    *videos*: manage animated wallpapers instead of images — thumbnails come
+    from the cached extracted frame of each video.
     """
     from wallpaperctl.config import load_ops_config
 
@@ -24,7 +29,7 @@ def run_manage_tui(
     root = root.expanduser()
 
     if warm_cache or warm_only:
-        code = _warm_cache_cli(root, no_kitty=no_kitty)
+        code = _warm_cache_cli(root, no_kitty=no_kitty, videos=videos, ops=ops)
         if warm_only or code != 0:
             return code
 
@@ -41,16 +46,25 @@ def run_manage_tui(
         )
         return 1
 
-    app = ManageApp(library_root=root, ops=ops, no_kitty=no_kitty)
+    app = ManageApp(library_root=root, ops=ops, no_kitty=no_kitty, videos=videos)
     app.run()
     return 0
 
 
-def _warm_cache_cli(root: Path, *, no_kitty: bool = False) -> int:
+def _warm_cache_cli(
+    root: Path,
+    *,
+    no_kitty: bool = False,
+    videos: bool = False,
+    ops: OpsConfig | None = None,
+) -> int:
     """Foreground cache warm with progress on stdout."""
     import sys
 
-    from wallpaperctl.sources.local import list_wallpaper_files
+    from wallpaperctl.config import load_ops_config
+
+    ops = ops or load_ops_config()
+    from wallpaperctl.sources.local import list_animated_files, list_wallpaper_files
     from wallpaperctl.term_graphics import GraphicsBackend, detect_backend, have_cmd
     from wallpaperctl.tui.preview_cache import warm_preview_cache
 
@@ -58,9 +72,18 @@ def _warm_cache_cli(root: Path, *, no_kitty: bool = False) -> int:
         print(f"Error: library not found: {root}", file=sys.stderr)
         return 1
 
-    paths = list_wallpaper_files(root)
+    if videos:
+        paths = []
+        for video in list_animated_files(root):
+            from wallpaperctl.tui.library import video_frame
+
+            frame = video_frame(video, ops)
+            if frame is not None and frame.is_file():
+                paths.append(frame)
+    else:
+        paths = list_wallpaper_files(root)
     if not paths:
-        print(f"No wallpapers in {root}")
+        print(f"No {'videos' if videos else 'wallpapers'} in {root}")
         return 0
 
     info = detect_backend(no_kitty=no_kitty)

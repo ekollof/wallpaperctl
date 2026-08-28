@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from wallpaperctl.sources.local import list_wallpaper_files
+from wallpaperctl.config import OpsConfig
+from wallpaperctl.sources.local import list_animated_files, list_wallpaper_files
 
 
 @dataclass
@@ -17,6 +18,7 @@ class WallpaperItem:
     mtime: float = 0.0
     width: int = 0
     height: int = 0
+    is_video: bool = False
 
     @property
     def name(self) -> str:
@@ -49,10 +51,20 @@ def scan_library(
     tags: object | None = None,  # unused; kept for call-site compatibility
     *,
     with_dimensions: bool = False,
+    videos: bool = False,
+    ops: OpsConfig | None = None,
 ) -> list[WallpaperItem]:
-    """List wallpapers under *root* with optional dimensions."""
+    """List wallpapers under *root* with optional dimensions.
+
+    With ``videos=True`` the scan returns animated wallpapers instead of
+    images; dimensions come from the cached extracted frame (a representative
+    still), which is also what the TUI uses as the thumbnail.
+    """
     root = root.expanduser().resolve()
-    files = list_wallpaper_files(root)
+    if videos:
+        files = list_animated_files(root)
+    else:
+        files = list_wallpaper_files(root)
     items: list[WallpaperItem] = []
     for p in files:
         try:
@@ -66,7 +78,10 @@ def scan_library(
             rel = p.name
         w = h = 0
         if with_dimensions:
-            w, h = _image_size(p)
+            if videos:
+                w, h = _video_size(p, ops)
+            else:
+                w, h = _image_size(p)
         items.append(
             WallpaperItem(
                 path=p,
@@ -75,6 +90,7 @@ def scan_library(
                 mtime=mtime,
                 width=w,
                 height=h,
+                is_video=videos,
             )
         )
     items.sort(key=lambda i: i.mtime, reverse=True)
@@ -89,6 +105,20 @@ def _image_size(path: Path) -> tuple[int, int]:
             return img.size
     except Exception:
         return 0, 0
+
+
+def video_frame(path: Path, ops: OpsConfig | None = None) -> Path | None:
+    """Cached representative still for an animated file (thumbnail source)."""
+    from wallpaperctl.media import extract_frame
+
+    return extract_frame(path, ops or OpsConfig())
+
+
+def _video_size(path: Path, ops: OpsConfig | None) -> tuple[int, int]:
+    frame = video_frame(path, ops)
+    if frame is None:
+        return 0, 0
+    return _image_size(frame)
 
 
 def filter_items(

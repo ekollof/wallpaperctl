@@ -112,6 +112,7 @@ wallpaperctl setup all            # config + themes + check + install + wallust
 wallpaperctl migrate              # cutover checklist (PATH, config, tools)
 wallpaperctl manage [dir]         # Textual TUI manager (same as -m)
 wallpaperctl -m                   # shortcut for manage
+wallpaperctl manage --video       # manage animated wallpapers (frame thumbnails)
 wallpaperctl manage --warm-cache  # pre-build Kitty/sixel previews, then open TUI
 wallpaperctl manage --warm-only   # only warm ~/.cache/wallpaperctl/previews
 ```
@@ -120,6 +121,10 @@ wallpaperctl manage --warm-only   # only warm ~/.cache/wallpaperctl/previews
 
 Interactive library browser built with [Textual](https://textual.textualize.io/).
 **Mark** (multi-select) is for batch ops — not search labels.
+`manage --video` switches the browser to animated wallpapers (videos under the
+library, e.g. `~/Wallpapers/animated`); previews and thumbnails use the cached
+extracted frame of each video, and `s`/enter sets them through the normal
+animated pipeline (omarchy motion-wallpaper / mpvpaper).
 
 | Key | Action |
 |-----|--------|

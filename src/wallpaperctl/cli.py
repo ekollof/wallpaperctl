@@ -450,6 +450,12 @@ def _subcommand_main(argv: list[str]) -> int:
         help="Disable Kitty graphics protocol (use sixel/chafa/blocks)",
     )
     p_manage.add_argument(
+        "--video",
+        action="store_true",
+        help="Manage animated wallpapers (videos) — thumbnails from the "
+        "cached extracted frame",
+    )
+    p_manage.add_argument(
         "--warm-cache",
         action="store_true",
         help="Pre-build Kitty PNG / sixel previews (then open the TUI)",
@@ -619,6 +625,7 @@ def _subcommand_main(argv: list[str]) -> int:
             no_kitty=args.no_kitty,
             warm_cache=args.warm_cache,
             warm_only=args.warm_only,
+            videos=args.video,
         )
 
     lock = WallpaperLock()

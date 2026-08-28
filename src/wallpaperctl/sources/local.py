@@ -55,7 +55,7 @@ def list_wallpaper_files(directory: Path) -> list[Path]:
     return files
 
 
-def _list_animated_files(directory: Path) -> list[Path]:
+def list_animated_files(directory: Path) -> list[Path]:
     """Collect animated files under *directory* recursively (skip hidden)."""
     if not directory.is_dir():
         return []
@@ -74,7 +74,7 @@ def pick_random_wallpaper(
         raise SystemExit(f"Error: Wallpaper directory '{directory}' not found!")
     if animated_only:
         animated_dir = directory / "animated"
-        files = _list_animated_files(animated_dir)
+        files = list_animated_files(animated_dir)
         if not files:
             raise SystemExit(f"Error: No animated wallpapers found in '{animated_dir}'!")
     else:

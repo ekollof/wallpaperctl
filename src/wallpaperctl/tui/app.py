@@ -90,7 +90,8 @@ class WallpaperListItem(ListItem):
     def _text(self) -> str:
         # Use a clear multi-select glyph (not a search “tag”)
         mark = "● " if self.marked else "  "
-        return f"{mark}{self.item.rel}"
+        kind = "🎬 " if self.item.is_video else ""
+        return f"{mark}{kind}{self.item.rel}"
 
     def set_marked(self, marked: bool) -> None:
         if self.marked == marked:
@@ -125,8 +126,10 @@ class MetaPane(Static):
             return
         sel = "yes" if marked else "no"
         batch = f"  ·  marked set: {mark_count}" if mark_count else ""
+        kind = "[b]animated video[/b]\n" if item.is_video else ""
         self.update(
             f"[b]{item.rel}[/b]\n"
+            f"{kind}"
             f"Size: {item.size_label}   Dims: {item.dim_label}   "
             f"Modified: {item.mtime_label}\n"
             f"In selection: {sel}{batch}\n"
@@ -195,11 +198,13 @@ class ManageApp(App[None]):
         library_root: Path,
         ops: OpsConfig,
         no_kitty: bool = False,
+        videos: bool = False,
     ) -> None:
         super().__init__()
         self.library_root = library_root.expanduser().resolve()
         self.ops = ops
         self.no_kitty = no_kitty
+        self.videos = videos
         self._all: list[WallpaperItem] = []
         self._query = ""
         self._selected: WallpaperItem | None = None
@@ -225,8 +230,10 @@ class ManageApp(App[None]):
         self._reload_library()
         self.query_one("#wall-list", ListView).focus()
         backend = self.query_one("#preview", PreviewPane).backend_label
+        mode = "videos (frame thumbnails)" if self.videos else "images"
         self._status(
-            f"Library: {self.library_root}  ·  preview: {backend}  ·  "
+            f"Library: {self.library_root}  ·  mode: {mode}  ·  "
+            f"preview: {backend}  ·  "
             f"space/t mark · d deletes selection"
         )
         self._start_cache_warm()
@@ -253,7 +260,11 @@ class ManageApp(App[None]):
             else:
                 return
 
-        paths = [it.path for it in self._all]
+        paths: list[Path] = []
+        for it in self._all:
+            preview = self._preview_path_for(it)
+            if preview is not None and preview.is_file():
+                paths.append(preview)
         if not paths:
             return
 
@@ -338,8 +349,24 @@ class ManageApp(App[None]):
             f"{n_visible}/{len(self._all)}{mark_s}{q}"
         )
 
+    def _preview_path_for(self, item: WallpaperItem | None) -> Path | None:
+        """Thumbnail source: the extracted frame for videos, else the file."""
+        if item is None:
+            return None
+        if not item.is_video:
+            return item.path
+        from wallpaperctl.tui.library import video_frame
+
+        return video_frame(item.path, self.ops) or item.path
+
     def _reload_library(self) -> None:
-        self._all = scan_library(self.library_root, tags=None, with_dimensions=True)
+        self._all = scan_library(
+            self.library_root,
+            tags=None,
+            with_dimensions=True,
+            videos=self.videos,
+            ops=self.ops,
+        )
         # Drop marks for files that disappeared
         alive = {self._key(it.path) for it in self._all}
         self._marked &= alive
@@ -376,7 +403,7 @@ class ManageApp(App[None]):
         child = lv.children[index]
         item = child.item if isinstance(child, WallpaperListItem) else None
         self._selected = item
-        self.query_one("#preview", PreviewPane).path = item.path if item else None
+        self.query_one("#preview", PreviewPane).path = self._preview_path_for(item)
         self._refresh_meta()
         try:
             lv.scroll_to_widget(child, animate=False)
@@ -411,7 +438,7 @@ class ManageApp(App[None]):
         if event.item is not None and isinstance(event.item, WallpaperListItem):
             item = event.item.item
         self._selected = item
-        self.query_one("#preview", PreviewPane).path = item.path if item else None
+        self.query_one("#preview", PreviewPane).path = self._preview_path_for(item)
         self._refresh_meta()
 
     @on(ListView.Selected, "#wall-list")
@@ -419,7 +446,9 @@ class ManageApp(App[None]):
         # Click only focuses/previews — does not set wallpaper or toggle mark
         if isinstance(event.item, WallpaperListItem):
             self._selected = event.item.item
-            self.query_one("#preview", PreviewPane).path = event.item.item.path
+            self.query_one("#preview", PreviewPane).path = self._preview_path_for(
+                event.item.item
+            )
             self._refresh_meta()
 
     @on(Input.Changed, "#search")
