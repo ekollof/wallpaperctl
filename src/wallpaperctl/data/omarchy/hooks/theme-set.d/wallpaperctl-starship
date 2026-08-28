@@ -6,15 +6,19 @@
 # so the starship prompt follows Omarchy themes (wallust only regenerates
 # ~/.config/starship.toml on wallpaperctl-driven wallpaper changes).
 #
+# Colors resolve through `omarchy-theme-color`, so themes with semantic-only
+# palettes (catppuccin defines red/green/… without colorN keys) work via the
+# same alias/derivation cascade omarchy's own templates use.
+#
 # NOTE: the omarchy hook runner executes hooks with `bash "$hook"` — this
 # must stay a bash script (a python file here gets interpreted as shell and
 # blocks on stdin).
 
-COLORS="$HOME/.local/state/omarchy/current/theme/colors.toml"
 TEMPLATE="$HOME/.config/wallust/templates/starship.toml"
 TARGET="$HOME/.config/starship.toml"
 
-[[ -f $COLORS && -f $TEMPLATE ]] || exit 0
+[[ -f $TEMPLATE ]] || exit 0
+command -v omarchy-theme-color >/dev/null 2>&1 || exit 0
 
 sed_script=$(mktemp)
 target_tmp=$(mktemp)
@@ -22,9 +26,9 @@ trap 'rm -f "$sed_script" "$target_tmp"' EXIT
 
 ok=1
 for key in color0 color1 color2 color4 color5 color8; do
-  value=$(sed -n "s/^[[:space:]]*$key[[:space:]]*=[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$COLORS" | head -1)
+  value=$(omarchy-theme-color "$key" 2>/dev/null | head -1)
   if [[ -z $value ]]; then
-    echo "wallpaperctl-starship: theme lacks $key — keeping existing starship.toml" >&2
+    echo "wallpaperctl-starship: theme does not resolve $key — keeping existing starship.toml" >&2
     ok=0
     break
   fi
