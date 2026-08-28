@@ -560,11 +560,7 @@ class ManageApp(App[None]):
                 self._status(f"Deleted {deleted}, failed {errors}")
             else:
                 self._status(f"Deleted {deleted} wallpaper(s)")
-            self._all = scan_library(
-                self.library_root, tags=None, with_dimensions=True
-            )
-            alive = {self._key(it.path) for it in self._all}
-            self._marked &= alive
+            self._reload_library()
             self._apply_filter(select_index=prev_index)
 
         self.push_screen(ConfirmScreen(msg), done)

@@ -67,3 +67,36 @@ def test_preview_path_image_passthrough(tmp_path: Path) -> None:
     app = ManageApp(library_root=root, ops=OpsConfig())
     item = next(iter(scan_library(root)))
     assert app._preview_path_for(item) == img
+
+
+def test_video_mode_survives_delete(tmp_path: Path) -> None:
+    """Regression: deleting in --video mode must not flip back to images."""
+    from wallpaperctl.tui.app import ManageApp
+
+    root, _img, vid = _make_library(tmp_path)
+    vid2 = tmp_path / "animated" / "clip2.mp4"
+    vid2.write_bytes(b"\x00\x00fake2.mp4")
+    ops = OpsConfig()
+
+    app = ManageApp(library_root=root, ops=ops, videos=True)
+
+    async def _run() -> None:
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            # mark both videos and batch-delete them
+            app.action_mark_all()
+            assert len(app._marked) == 2
+            app.action_delete()
+            await pilot.pause()
+            await pilot.press("y")  # confirm
+            await pilot.pause()
+            await pilot.pause()
+
+    import asyncio
+
+    asyncio.run(_run())
+
+    assert not vid.exists() and not vid2.exists()
+    # library still in video mode: zero items, but the mode flag held
+    assert app.videos is True
+    assert all(i.is_video for i in app._all)
