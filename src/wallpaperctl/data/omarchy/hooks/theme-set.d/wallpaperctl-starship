@@ -1,0 +1,40 @@
+#!/bin/bash
+# wallpaperctl hook: render the starship prompt from the Omarchy theme.
+#
+# Installed by `wallpaperctl setup omarchy` into
+# ~/.config/omarchy/hooks/theme-set.d/ — runs on every `omarchy theme set`
+# so the starship prompt follows Omarchy themes (wallust only regenerates
+# ~/.config/starship.toml on wallpaperctl-driven wallpaper changes).
+#
+# NOTE: the omarchy hook runner executes hooks with `bash "$hook"` — this
+# must stay a bash script (a python file here gets interpreted as shell and
+# blocks on stdin).
+
+COLORS="$HOME/.local/state/omarchy/current/theme/colors.toml"
+TEMPLATE="$HOME/.config/wallust/templates/starship.toml"
+TARGET="$HOME/.config/starship.toml"
+
+[[ -f $COLORS && -f $TEMPLATE ]] || exit 0
+
+sed_script=$(mktemp)
+target_tmp=$(mktemp)
+trap 'rm -f "$sed_script" "$target_tmp"' EXIT
+
+ok=1
+for key in color0 color1 color2 color4 color5 color8; do
+  value=$(sed -n "s/^[[:space:]]*$key[[:space:]]*=[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$COLORS" | head -1)
+  if [[ -z $value ]]; then
+    echo "wallpaperctl-starship: theme lacks $key — keeping existing starship.toml" >&2
+    ok=0
+    break
+  fi
+  printf 's|{{ %s }}|%s|g\n' "$key" "$value" >>"$sed_script"
+done
+((ok == 1)) || exit 1
+
+if sed -f "$sed_script" "$TEMPLATE" >"$target_tmp"; then
+  mv "$target_tmp" "$TARGET"
+else
+  echo "wallpaperctl-starship: render failed — keeping existing starship.toml" >&2
+  exit 1
+fi

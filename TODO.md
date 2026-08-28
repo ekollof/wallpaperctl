@@ -72,6 +72,12 @@
     `pkill -USR2 -x opencode`) so the system theme re-resolves against the new
     terminal colors. Self-heals stray wallust registration (`_heal_opencode`).
     NOTE: SIGUSR2 briefly redraws TUIs — that is stock omarchy behavior.
+  - **starship follows Omarchy themes**: theme-set hook
+    (`~/.config/omarchy/hooks/theme-set.d/wallpaperctl-starship`, bash + sed —
+    hook runners execute hooks with `bash "$hook"`, so it must stay a bash
+    script; a python file here is interpreted as shell and blocks on stdin,
+    hanging omarchy theme set) renders the wallust starship template from the
+    theme colors.toml on every theme switch; installed by `setup omarchy`
   - self-heals stray wallust opencode registration (`_heal_opencode`)
   - run `omarchy theme refresh` (fallback: `OMARCHY_THEME_SKIP_BACKGROUND=1
     omarchy theme set dynamic-wallpapers`), timeout `omarchy_timeout`

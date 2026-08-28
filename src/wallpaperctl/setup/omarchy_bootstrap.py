@@ -153,6 +153,36 @@ def _install_wallust(*, yes: bool) -> bool:
     return False
 
 
+def _install_omarchy_hooks() -> int:
+    """Install wallpaperctl theme-set hooks (starship follows Omarchy themes)."""
+    import shutil
+
+    from wallpaperctl.util import run
+
+    pkg = Path(__file__).resolve().parent.parent / "data" / "omarchy" / "hooks"
+    if not pkg.is_dir():
+        print("Packaged omarchy hooks not found in wallpaperctl install.")
+        return 1
+
+    dest_root = home() / ".config" / "omarchy" / "hooks"
+    dest_root.mkdir(parents=True, exist_ok=True)
+    for src in sorted(pkg.rglob("*")):
+        if not src.is_file():
+            continue
+        rel = src.relative_to(pkg)
+        dest = dest_root / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if not dest.is_file() or src.read_bytes() != dest.read_bytes():
+            shutil.copy2(src, dest)
+            print(f"hook:    {dest}")
+        dest.chmod(dest.stat().st_mode | 0o111)
+
+    # sync once now so the prompt matches the active theme immediately
+    for hook in sorted((dest_root / "theme-set.d").glob("wallpaperctl-*")):
+        run([str(hook)], timeout=30)
+    return 0
+
+
 def bootstrap_omarchy(*, yes: bool = False, force: bool = False) -> int:
     """Set up the Omarchy integration: wallust + one persistent theme, activated."""
     print("wallpaperctl setup omarchy")
@@ -182,6 +212,9 @@ def bootstrap_omarchy(*, yes: bool = False, force: bool = False) -> int:
 
     print()
     _ensure_motion_plugin(yes=yes)
+
+    print()
+    _install_omarchy_hooks()
 
     print()
     rc = bootstrap_wallust(force=force, yes=yes, skip_opencode=True)

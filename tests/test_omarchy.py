@@ -818,6 +818,88 @@ def test_op_run_leaves_tui_json_untouched(monkeypatch, tmp_path):
     assert json.loads(tui.read_text(encoding="utf-8"))["theme"] == "system"
 
 
+def test_starship_hook_renders_theme_palette(monkeypatch, tmp_path):
+    import os
+    import subprocess
+
+    _fake_home(monkeypatch, tmp_path)
+    hook = (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "wallpaperctl"
+        / "data"
+        / "omarchy"
+        / "hooks"
+        / "theme-set.d"
+        / "wallpaperctl-starship"
+    )
+    assert hook.is_file()
+
+    colors = tmp_path / ".local/state/omarchy/current/theme/colors.toml"
+    colors.parent.mkdir(parents=True)
+    colors.write_text(
+        'mode = "dark"\n'
+        'background = "#101010"\n'
+        'color0 = "#101010"\n'
+        'color1 = "#ff5555"\n'
+        'color2 = "#50fa7b"\n'
+        'color4 = "#bd93f9"\n'
+        'color5 = "#ff79c6"\n'
+        'color8 = "#4d4d4d"\n',
+        encoding="utf-8",
+    )
+    tpl = tmp_path / ".config/wallust/templates/starship.toml"
+    tpl.parent.mkdir(parents=True)
+    tpl.write_text(
+        'format = "$all"\n'
+        "[username]\n"
+        'style_user = "bg:{{ color0 }}"\n'
+        'style_root = "bg:{{ color1 }} fg:{{ color2 }}"\n'
+        'style = "bg:{{ color4 }} bg:{{ color5 }} bg:{{ color8 }}"\n',
+        encoding="utf-8",
+    )
+
+    env = dict(os.environ, HOME=str(tmp_path))
+    result = subprocess.run(["bash", str(hook)], env=env, capture_output=True)
+    assert result.returncode == 0, result.stderr
+
+    rendered = (tmp_path / ".config/starship.toml").read_text(encoding="utf-8")
+    assert "{{" not in rendered
+    assert 'style_user = "bg:#101010"' in rendered
+    assert 'style_root = "bg:#ff5555 fg:#50fa7b"' in rendered
+    assert "#bd93f9" in rendered and "#ff79c6" in rendered and "#4d4d4d" in rendered
+
+
+def test_starship_hook_keeps_file_on_unresolvable_theme(monkeypatch, tmp_path):
+    import os
+    import subprocess
+
+    _fake_home(monkeypatch, tmp_path)
+    hook = (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "wallpaperctl"
+        / "data"
+        / "omarchy"
+        / "hooks"
+        / "theme-set.d"
+        / "wallpaperctl-starship"
+    )
+    colors = tmp_path / ".local/state/omarchy/current/theme/colors.toml"
+    colors.parent.mkdir(parents=True)
+    colors.write_text('background = "#101010"\n', encoding="utf-8")  # no colorN
+    tpl = tmp_path / ".config/wallust/templates/starship.toml"
+    tpl.parent.mkdir(parents=True)
+    tpl.write_text("x = {{ color1 }}\n", encoding="utf-8")
+    existing = tmp_path / ".config/starship.toml"
+    existing.write_text("previous = 1\n", encoding="utf-8")
+
+    env = dict(os.environ, HOME=str(tmp_path))
+    result = subprocess.run(["bash", str(hook)], env=env, capture_output=True)
+    assert result.returncode == 1
+    assert existing.read_text(encoding="utf-8") == "previous = 1\n"
+
+
 # ── registration ─────────────────────────────────────────────────────────
 
 
