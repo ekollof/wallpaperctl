@@ -75,10 +75,20 @@ if ! command -v python3 >/dev/null 2>&1; then
   die "python3 not found; install Python >= ${PYTHON_MIN_MAJOR}.${PYTHON_MIN_MINOR} first"
 fi
 
-if ! python3 -c 'import sys; raise SystemExit(0 if (sys.version_info.major, sys.version_info.minor) >= ('"$PYTHON_MIN_MAJOR"', '"$PYTHON_MIN_MINOR"'))' 2>/dev/null; then
-  die "python3 $(python3 --version 2>&1) is too old; wallpaperctl needs >= ${PYTHON_MIN_MAJOR}.${PYTHON_MIN_MINOR}"
+# Only ask python to print its version; compare in POSIX shell.
+PYVER=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:3])))' 2>/dev/null) || PYVER=""
+if [ -z "$PYVER" ]; then
+  die "python3 is not usable ($(python3 --version 2>&1)); wallpaperctl needs >= ${PYTHON_MIN_MAJOR}.${PYTHON_MIN_MINOR}"
 fi
-msg "Python: $(python3 --version 2>&1)"
+
+PY_MAJOR=${PYVER%%.*}
+PY_REST=${PYVER#*.}
+PY_MINOR=${PY_REST%%.*}
+if [ "$PY_MAJOR" -lt "$PYTHON_MIN_MAJOR" ] ||
+  { [ "$PY_MAJOR" -eq "$PYTHON_MIN_MAJOR" ] && [ "$PY_MINOR" -lt "$PYTHON_MIN_MINOR" ]; }; then
+  die "python3 $PYVER is too old; wallpaperctl needs >= ${PYTHON_MIN_MAJOR}.${PYTHON_MIN_MINOR}"
+fi
+msg "Python: $PYVER"
 
 # ── pipx prerequisite ───────────────────────────────────────────────────
 
