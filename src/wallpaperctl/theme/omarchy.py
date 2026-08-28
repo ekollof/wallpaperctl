@@ -29,7 +29,7 @@ from wallpaperctl.omarchy import (
 from wallpaperctl.theme.base import debug_op
 from wallpaperctl.theme.cosmic import pick_accent
 from wallpaperctl.theme.pywalfox import load_colors_json
-from wallpaperctl.util import hex_to_rgb, home
+from wallpaperctl.util import have, hex_to_rgb, home, run
 
 log = logging.getLogger("wallpaperctl")
 
@@ -397,8 +397,29 @@ class OmarchyThemeOp:
                 ctx,
             )
             return False
+
+        # opencode sessions reload themes on SIGUSR2. The omarchy-theme TUI
+        # plugin watches omarchy.json for a no-interruption retint, but the
+        # watcher misses events in some setups (observed under kitty reloads
+        # racing the theme-set post commands), leaving sessions one palette
+        # behind. Nudge every running opencode so the fresh palette lands.
+        self._signal_opencode(ctx)
         debug_op(self.name, "theme refreshed via omarchy", ctx)
         return True
+
+    def _signal_opencode(self, ctx: WallpaperContext) -> None:
+        if have("omarchy-restart-opencode"):
+            r = run(["omarchy-restart-opencode"], timeout=10)
+        elif have("pkill"):
+            r = run(["pkill", "-USR2", "-x", "opencode"], timeout=5)
+        else:
+            debug_op(self.name, "no pkill/omarchy-restart-opencode; skipping signal", ctx)
+            return
+        debug_op(
+            self.name,
+            f"SIGUSR2 → opencode (rc={r.returncode})",
+            ctx,
+        )
 
 
 def _read_text(path: Path) -> str | None:

@@ -64,6 +64,12 @@
   - skip refresh when rendered palette unchanged (`omarchy_skip_unchanged`, default on)
   - refresh can be disabled entirely (`omarchy_refresh_apps`, default on → colors.toml
     staged only, applied on next manual theme refresh/re-selection)
+  - **SIGUSR2 → opencode after every successful refresh** (`omarchy-restart-opencode`
+    when present, else `pkill -USR2 -x opencode`): the omarchy-theme.ts watcher
+    intermittently misses omarchy.json updates under kitty reload races, leaving
+    sessions stuck on a stale `omarchy-<hash>` theme; SIGUSR2 forces a config+theme
+    reload so every session lands on the fresh palette (live-verified)
+  - self-heals stray wallust opencode registration (`_heal_opencode`)
   - run `omarchy theme refresh` (fallback: `OMARCHY_THEME_SKIP_BACKGROUND=1
     omarchy theme set dynamic-wallpapers`), timeout `omarchy_timeout`
   - `ensure_theme_skeleton()` / `write_palette_preview()` reused by setup
@@ -123,7 +129,8 @@
       theme-op order
 
 ### Verification (Omarchy)
-- [x] `pytest` (203 passed), `ruff check src tests` (clean)
+- [x] `pytest` (216 passed), `ruff check src tests` (clean; suite is signal-safe —
+      no test can SIGUSR2/SIGUSR1 real processes)
 - [x] Live: `wallpaperctl detect` → `hyprland+omarchy`; `setup check` shows Omarchy section
 - [x] Live: `setup omarchy` creates + activates "Dynamic Wallpapers"; `omarchy theme list`
       and the switcher picker show it (preview.png fix)

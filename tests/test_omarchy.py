@@ -27,6 +27,20 @@ from wallpaperctl.theme.omarchy import (
     sync_theme_media,
 )
 
+
+@pytest.fixture(autouse=True)
+def _no_real_process_signals(monkeypatch):
+    """Never let tests signal real processes (kitty/opencode) or run wallust.
+
+    Individual tests may re-patch these; the stub only guarantees that an
+    un-mocked code path cannot SIGUSR2/SIGUSR1 the developer's live session.
+    """
+    rc0 = type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+    monkeypatch.setattr("wallpaperctl.theme.omarchy.run", lambda *a, **k: rc0)
+    monkeypatch.setattr(
+        "wallpaperctl.theme.omarchy.have", lambda cmd: cmd in ("pkill", "wallust")
+    )
+
 # ── helpers / state ──────────────────────────────────────────────────────
 
 
@@ -718,6 +732,64 @@ def test_setup_swaps_wallust_config(monkeypatch, tmp_path):
         assert cfg.is_file()
         assert "generate-wallust-theme" not in cfg.read_text(encoding="utf-8")
         assert "[hooks]" not in cfg.read_text(encoding="utf-8")
+
+
+def test_op_run_signals_opencode_after_refresh(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+
+    runs: list[list[str]] = []
+
+    def fake_run_omarchy(args, **kwargs):
+        runs.append(args)
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    def fake_run(args, **kwargs):
+        runs.append(list(args))
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    with (
+        patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
+        patch("wallpaperctl.theme.omarchy.run_omarchy", side_effect=fake_run_omarchy),
+        patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.theme.omarchy.have", side_effect=lambda c: c == "pkill"),
+        patch("wallpaperctl.theme.omarchy.run", side_effect=fake_run),
+    ):
+        assert OmarchyThemeOp().run(_ctx(tmp_path))
+
+    assert ["pkill", "-USR2", "-x", "opencode"] in runs
+
+
+def test_op_run_no_signal_when_refresh_skipped(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+    wal = tmp_path / ".cache" / "wal"
+    wal.mkdir(parents=True)
+    (wal / "colors.json").write_text(json.dumps(_palette()), encoding="utf-8")
+
+    runs: list[list[str]] = []
+
+    def fake_run_omarchy(args, **kwargs):
+        runs.append(args)
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    def fake_run(args, **kwargs):
+        runs.append(list(args))
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    with (
+        patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
+        patch("wallpaperctl.theme.omarchy.run_omarchy", side_effect=fake_run_omarchy),
+        patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.theme.omarchy.have", side_effect=lambda c: c == "pkill"),
+        patch("wallpaperctl.theme.omarchy.run", side_effect=fake_run),
+    ):
+        op = OmarchyThemeOp()
+        ctx = _ctx(tmp_path)
+        assert op.run(ctx)  # first run writes + refreshes
+        assert ["pkill", "-USR2", "-x", "opencode"] in runs
+        assert op.run(ctx)  # same palette → refresh skipped → no signal
+        assert runs.count(["pkill", "-USR2", "-x", "opencode"]) == 1
 
 
 # ── registration ─────────────────────────────────────────────────────────

@@ -82,7 +82,12 @@ def test_fix_installed_palette_updates_cache(tmp_path: Path) -> None:
     (wal / "colors.sh").write_text(
         f"background='{DARK_BG}'\nforeground='#5a5464'\n", encoding="utf-8"
     )
-    ok = fix_installed_palette(wal_dir=wal)
+    # never signal real processes from tests (opencode script / kitty reload)
+    with (
+        patch("wallpaperctl.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.theme.palette_contrast.run"),
+    ):
+        ok = fix_installed_palette(wal_dir=wal)
     assert ok
     fixed = json.loads((wal / "colors.json").read_text(encoding="utf-8"))
     assert _contrast_ratio(fixed["special"]["foreground"], DARK_BG) >= 4.5
