@@ -130,6 +130,11 @@
 - [x] Live: colors.toml written from palette; backgrounds/ + preview synced
 - [ ] Full `wallpaperctl set <path>` cycle with retint (disruptive to TUI agents — run
       when no agents are active); skip-unchanged path unit-tested
+- [x] Live: opencode updates via omarchy (staged opencode.json → themes/omarchy.json →
+      omarchy-theme.ts live retint, verified with content-hash probe). NOTE: opencode
+      sessions started while tui.json transiently said theme "wallust" keep
+      selected="wallust" and are ignored by omarchy's plugin (owned() gate) — restart
+      those sessions once; new sessions pick up "omarchy" and retint live.
 - [ ] Animated cycle: video wallpaper → motion-wallpaper plays; static after → stops
 - [ ] Switch to a stock theme → bg-only behavior; switch back → full dynamic resumes
 
