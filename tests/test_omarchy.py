@@ -570,6 +570,82 @@ def test_wallust_bootstrap_skips_opencode_on_omarchy(monkeypatch, tmp_path):
         boot.assert_not_called()
 
 
+# ── motion wallpaper plugin ──────────────────────────────────────────────
+
+
+def _plugin_list_stdout(entries):
+    return json.dumps(entries)
+
+
+def test_motion_plugin_present_and_enabled(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    with patch(
+        "wallpaperctl.setup.omarchy_bootstrap.run_omarchy"
+    ) as run_mock:
+        run_mock.return_value.returncode = 0
+        run_mock.return_value.stdout = _plugin_list_stdout(
+            [{"id": "nosignal.motion-wallpaper", "enabled": True}]
+        )
+        from wallpaperctl.setup.omarchy_bootstrap import motion_plugin_status
+
+        st = motion_plugin_status()
+        assert st["installed"] and st["enabled"]
+
+
+def test_motion_plugin_missing_gets_installed(monkeypatch, tmp_path, capsys):
+    _fake_home(monkeypatch, tmp_path)
+
+    def fake_run(args, **kwargs):
+        if args[:2] == ["plugin", "list"]:
+            return type("R", (), {"returncode": 0, "stdout": "[]", "stderr": ""})()
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    with patch(
+        "wallpaperctl.setup.omarchy_bootstrap.run_omarchy", side_effect=fake_run
+    ) as run_mock:
+        from wallpaperctl.setup.omarchy_bootstrap import _ensure_motion_plugin
+
+        assert _ensure_motion_plugin(yes=True)
+        add_calls = [
+            c.args[0]
+            for c in run_mock.call_args_list
+            if c.args[0][0] == "plugin" and c.args[0][1] == "add"
+        ]
+        assert add_calls and add_calls[0][2].endswith(".git") and "--enable" in add_calls[0]
+
+
+def test_motion_plugin_decline_is_soft(monkeypatch, tmp_path, capsys):
+    _fake_home(monkeypatch, tmp_path)
+
+    def fake_run(args, **kwargs):
+        if args[:2] == ["plugin", "list"]:
+            return type("R", (), {"returncode": 0, "stdout": "[]", "stderr": ""})()
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    with (
+        patch("wallpaperctl.setup.omarchy_bootstrap.run_omarchy", side_effect=fake_run),
+        patch("builtins.input", return_value="n"),
+    ):
+        from wallpaperctl.setup.omarchy_bootstrap import _ensure_motion_plugin
+
+        assert not _ensure_motion_plugin(yes=False)
+        out = capsys.readouterr().out
+        assert "omarchy plugin add" in out
+
+
+def test_motion_plugin_mgmt_unavailable_is_soft(monkeypatch, tmp_path, capsys):
+    _fake_home(monkeypatch, tmp_path)
+    with patch(
+        "wallpaperctl.setup.omarchy_bootstrap.run_omarchy"
+    ) as run_mock:
+        run_mock.return_value.returncode = 1
+        run_mock.return_value.stdout = ""
+        from wallpaperctl.setup.omarchy_bootstrap import _ensure_motion_plugin
+
+        assert not _ensure_motion_plugin(yes=True)
+        assert "plugin management unavailable" in capsys.readouterr().out
+
+
 # ── registration ─────────────────────────────────────────────────────────
 
 

@@ -180,6 +180,14 @@ def cmd_check(
         print(f"  dynamic theme: installed ({ost['theme_dir']})")
     else:
         print("  dynamic theme: NO — wallpaperctl setup omarchy")
+    motion = ost.get("motion_plugin") or {}
+    if not motion.get("available", True):
+        print("  motion plugin: unknown (omarchy plugin management unavailable)")
+    elif motion.get("installed"):
+        state = "enabled" if motion.get("enabled") else "installed but DISABLED"
+        print(f"  motion plugin: {state} ({motion.get('id')})")
+    else:
+        print("  motion plugin: NO — animated wallpapers fall back to mpvpaper")
     print()
 
     if missing_req:

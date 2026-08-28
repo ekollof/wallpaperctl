@@ -234,8 +234,10 @@ wallpaperctl setup omarchy    # installs prerequisites, creates + activates the 
 ```
 
 This creates **one** persistent user theme, *Dynamic Wallpapers*
-(`~/.config/omarchy/themes/dynamic-wallpapers/`), and activates it. While that
-theme is active, every wallpaper change:
+(`~/.config/omarchy/themes/dynamic-wallpapers/`), and activates it. It also
+makes sure the omarchy-shell **Motion Wallpaper** plugin (third-party,
+`nosignal.motion-wallpaper`) is installed and enabled for animated wallpapers.
+While that theme is active, every wallpaper change:
 
 1. sets the background via `omarchy theme bg set` (or omarchy's motion-wallpaper for videos),
 2. runs wallust on the image,

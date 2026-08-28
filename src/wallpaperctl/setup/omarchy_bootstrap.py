@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from wallpaperctl.omarchy import (
@@ -22,6 +23,87 @@ from wallpaperctl.setup.wallust_bootstrap import bootstrap_wallust, wallust_stat
 from wallpaperctl.theme.omarchy import ensure_theme_skeleton
 from wallpaperctl.util import have, home
 
+MOTION_PLUGIN_REPO = "https://github.com/28allday/Motion-Wallpaper-Omarchy.git"
+MOTION_PLUGIN_FRAGMENT = "motion-wallpaper"
+
+
+def _ask(prompt: str, *, yes: bool) -> bool:
+    if yes:
+        return True
+    try:
+        ans = input(f"{prompt} [y/N] ").strip().lower()
+    except EOFError:
+        return False
+    return ans in ("y", "yes")
+
+
+def motion_plugin_status() -> dict:
+    """Installed/enabled state of the omarchy-shell Motion Wallpaper plugin.
+
+    Animated wallpapers under the dynamic theme are played through this
+    third-party plugin (nosignal.motion-wallpaper); without it the setter
+    falls back to mpvpaper. ``available`` is False when omarchy's plugin
+    management itself is unavailable (very old omarchy).
+    """
+    r = run_omarchy(["plugin", "list", "--json"], timeout=15)
+    stdout = r.stdout if isinstance(r.stdout, str) else ""
+    if r.returncode != 0:
+        return {"available": False, "installed": False, "enabled": False, "id": None}
+    try:
+        data = json.loads(stdout or "[]")
+    except (json.JSONDecodeError, TypeError):
+        return {"available": False, "installed": False, "enabled": False, "id": None}
+    plugins = data if isinstance(data, list) else data.get("plugins", [])
+    for entry in plugins:
+        if not isinstance(entry, dict):
+            continue
+        if MOTION_PLUGIN_FRAGMENT in str(entry.get("id", "")).lower():
+            return {
+                "available": True,
+                "installed": True,
+                "enabled": bool(entry.get("enabled")),
+                "id": entry.get("id"),
+            }
+    return {"available": True, "installed": False, "enabled": False, "id": None}
+
+
+def _ensure_motion_plugin(*, yes: bool) -> bool:
+    """Make sure the Motion Wallpaper plugin is installed and enabled."""
+    motion = motion_plugin_status()
+    if not motion["available"]:
+        print("Note: omarchy plugin management unavailable; cannot verify the")
+        print("  Motion Wallpaper plugin (animated wallpapers fall back to mpvpaper).")
+        return False
+    if motion["installed"] and motion["enabled"]:
+        print(f"Motion Wallpaper plugin: enabled ({motion['id']})")
+        return True
+    if motion["installed"]:
+        print(f"Motion Wallpaper plugin installed but disabled ({motion['id']}).")
+        if _ask("Enable it now?", yes=yes):
+            r = run_omarchy(["plugin", "enable", str(motion["id"])], timeout=30)
+            if r.returncode == 0:
+                print("✓ Motion Wallpaper plugin enabled.")
+                return True
+            print("Warning: enabling failed; animated wallpapers fall back to mpvpaper.")
+        return False
+
+    print("Animated wallpapers need the omarchy-shell Motion Wallpaper plugin:")
+    print(f"  {MOTION_PLUGIN_REPO}")
+    if _ask("Install and enable it now?", yes=yes):
+        args = ["plugin", "add", MOTION_PLUGIN_REPO, "--enable"]
+        if yes:
+            args.append("--yes")
+        r = run_omarchy(args, timeout=120)
+        if r.returncode == 0:
+            print("✓ Motion Wallpaper plugin installed and enabled.")
+            return True
+        print("Warning: plugin install failed; animated wallpapers fall back to mpvpaper.")
+        print(f"  Manual: omarchy plugin add {MOTION_PLUGIN_REPO} --enable")
+    else:
+        print("Skipped. Install later with:")
+        print(f"  omarchy plugin add {MOTION_PLUGIN_REPO} --enable")
+    return False
+
 
 def omarchy_status() -> dict:
     theme_dir = user_theme_dir()
@@ -32,6 +114,7 @@ def omarchy_status() -> dict:
         "current_theme": current_theme_name(),
         "theme_dir": str(theme_dir),
         "theme_installed": (theme_dir / "colors.toml").is_file(),
+        "motion_plugin": motion_plugin_status(),
         "wallust": wallust_status(),
     }
 
@@ -96,6 +179,9 @@ def bootstrap_omarchy(*, yes: bool = False, force: bool = False) -> int:
         if not _install_wallust(yes=yes):
             print("Error: wallust is still missing; aborting (install it and re-run).")
             return 1
+
+    print()
+    _ensure_motion_plugin(yes=yes)
 
     print()
     rc = bootstrap_wallust(force=force, yes=yes, skip_opencode=True)

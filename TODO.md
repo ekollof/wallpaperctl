@@ -80,7 +80,12 @@
     the switcher hides themes without one)
   - activate once: `omarchy theme set dynamic-wallpapers` (idempotent) + warm picker
     cache (`omarchy theme switcher --preload`)
-  - status for `setup check`: binary, shell running, current theme, theme installed
+  - **Motion Wallpaper plugin** (third-party `nosignal.motion-wallpaper`, needed for
+    animated wallpapers): verified/installed/enabled via `omarchy plugin add
+    https://github.com/28allday/Motion-Wallpaper-Omarchy.git --enable`; soft-skip when
+    omarchy plugin management is unavailable
+  - status for `setup check`: binary, shell running, current theme, theme installed,
+    motion plugin state
 - [x] `tests/test_omarchy.py` — 33 tests:
   - palette→colors.toml mapping (accent present, charset safety, luminance mode,
     gradient string, TOML round-trip, atomic write)
