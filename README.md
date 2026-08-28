@@ -20,6 +20,26 @@ workflows.
 
 From the public GitHub repository:
 
+### install.sh (one-liner, uses pipx)
+
+The bundled installer is a small POSIX script (works on Linux and the BSDs)
+that bootstraps exactly what wallpaperctl needs to run — Python 3.10+ and
+pipx — installs the package, then hands over to wallpaperctl itself, which
+installs the remaining system/theme dependencies:
+
+```bash
+# From a clone:
+./install.sh -y
+
+# Or straight from GitHub:
+curl -fsSL https://raw.githubusercontent.com/ekollof/wallpaperctl/main/install.sh | sh
+```
+
+Flags: `--upgrade` (reinstall), `--from <path|git-url>`, `-y/--yes`
+(non-interactive). After installing, it runs `wallpaperctl setup all`
+(dep check + install, config, GTK themes, wallust). On Omarchy follow up
+with `wallpaperctl setup omarchy`.
+
 ### pipx (recommended for CLI tools)
 
 ```bash
@@ -195,30 +215,57 @@ Optional: `~/.config/hass.cfg` (`[auth]` with `server=`, `token=`, `lamp=`).
 | Environment | Wallpaper setter |
 |-------------|------------------|
 | KDE Plasma | Session D-Bus `evaluateScript` via **jeepney** (+ lockscreen `kscreenlockerrc` file edit) |
-| Hyprland | `hyprctl hyprpaper` (skipped when Noctalia is active) |
+| Hyprland | `hyprctl hyprpaper` (skipped when Noctalia or Omarchy is active) |
 | Noctalia | `qs -c noctalia-shell ipc call wallpaper set … all` |
+| Omarchy | `omarchy theme bg set` (static) / `omarchy-shell motion-wallpaper` (video) |
 | XFCE | `xfconf-query` for **connected** outputs (xrandr) + existing keys; creates missing multihead/dock props |
 | Cinnamon | `gsettings` picture-uri + options |
 | COSMIC | **cosmic** setter updates Background *config + state* (session + lock/greeter); **cosmic-theme** soft palette |
 | Fallback X11 | `feh` → `nitrogen` → `hsetroot` → `xwallpaper` → `xsetbg` |
 
+### Omarchy
+
+Omarchy does not run hyprpaper — the omarchy-shell renders the background, so
+wallpaperctl drives it through omarchy tooling:
+
+```bash
+wallpaperctl setup omarchy    # installs prerequisites, creates + activates the theme
+```
+
+This creates **one** persistent user theme, *Dynamic Wallpapers*
+(`~/.config/omarchy/themes/dynamic-wallpapers/`), and activates it. While that
+theme is active, every wallpaper change:
+
+1. sets the background via `omarchy theme bg set` (or omarchy's motion-wallpaper for videos),
+2. runs wallust on the image,
+3. rewrites the theme's `colors.toml` from the palette,
+4. runs `omarchy theme refresh` so all Omarchy-managed apps (terminal, bar, btop,
+   browser, editor, keyboard RGB, …) retint from templates.
+
+Switch to any other Omarchy theme and wallpaperctl only swaps backgrounds
+(no color changes); switching back resumes full dynamic behavior. No new
+themes are created per wallpaper — only `colors.toml` of the dynamic theme
+updates.
+
 ## Theme operations (order)
 
 1. wallust  
-2. cosmic-theme (COSMIC DE: soft accent + optional surfaces; not full neon recolor)  
-3. pywalfox (boost `colors.json` contrast for Firefox controls, then `pywalfox update`)  
-4. xresources (`xrdb -merge`)  
-5. nwg-look  
-6. notifications (dunst / mako + waybar)  
-7. openrgb  
-8. openlinkhub (local OpenLinkHub REST — same palette color as openrgb; soft-skip if not running)  
-9. emacs (`emacs-daemon`)  
-10. window-manager signals (`xsetroot`, xsettingsd, awesome)  
-11. gtk-theme  
-12. cinnamon-theme (dynamic CSS/WM theme)  
-13. dynamic-icons  
-14. homeassistant  
-15. steam-theme (stub / disabled, same as shell)
+2. omarchy (Dynamic Wallpapers theme: colors.toml + `omarchy theme refresh`; only when that theme is active)  
+3. cosmic-theme (COSMIC DE: soft accent + optional surfaces; not full neon recolor)  
+4. pywalfox (boost `colors.json` contrast for Firefox controls, then `pywalfox update`)  
+5. xresources (`xrdb -merge`)  
+6. nwg-look  
+7. notifications (dunst / mako + waybar)  
+8. openrgb  
+9. openlinkhub (local OpenLinkHub REST — same palette color as openrgb; soft-skip if not running)  
+10. emacs (`emacs-daemon`)  
+11. window-manager signals (`xsetroot`, xsettingsd, awesome)  
+12. gtk-theme  
+13. cinnamon-theme (dynamic CSS/WM theme)  
+14. dynamic-icons  
+15. homeassistant  
+16. steam-theme (stub / disabled, same as shell)  
+17. cde-theme  
 
 Wallpaper setters run **before** theme ops.
 
