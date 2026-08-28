@@ -48,6 +48,11 @@ def test_lockscreen_file_edit_creates_and_updates(tmp_path: Path, monkeypatch):
     assert uri not in text2  # old uri gone
 
 
+def test_animated_overlay_state_path_is_absolute() -> None:
+    """Regression: an unexpanded '~' once created a literal ./~ dir in the cwd."""
+    assert plasma_mod._ANIMATED_OVERLAY_STATE.is_absolute()
+
+
 def test_animated_overlay_settings_saved_and_restored(tmp_path: Path, monkeypatch):
     setter = PlasmaSetter()
     video = tmp_path / "wall.mp4"

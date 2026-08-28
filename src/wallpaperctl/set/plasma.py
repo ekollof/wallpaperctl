@@ -27,7 +27,7 @@ WALLPAPER_PLUGIN = "org.kde.image"
 # static apply.
 _ANIMATED_OVERLAY_KEYS = ("FillMode", "Color", "Blur")
 _ANIMATED_OVERLAY_DEFAULTS = {"FillMode": "2", "Color": "#ffffff", "Blur": "false"}
-_ANIMATED_OVERLAY_STATE = Path("~/.cache/wallpaperctl/plasma-image-overlay")
+_ANIMATED_OVERLAY_STATE = Path("~/.cache/wallpaperctl/plasma-image-overlay").expanduser()
 _IMAGE_SECTION_RE = re.compile(
     r"^\[Containments\]\[\d+\]\[Wallpaper\]\[org\.kde\.image\]\[General\]\s*$"
 )
