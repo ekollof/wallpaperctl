@@ -22,6 +22,7 @@ def wallust_status() -> dict:
         "config_dir": str(cfg_dir),
         "config_exists": cfg.is_file(),
         "config_path": str(cfg),
+        "omarchy_config": omarchy_config_installed(),
         "templates_dir": str(cfg_dir / "templates"),
         "scripts_dir": str(cfg_dir / "scripts"),
         "stale_templates": (
@@ -31,6 +32,43 @@ def wallust_status() -> dict:
         "wal_cache": str(home() / ".cache" / "wal"),
         "wal_colors": (home() / ".cache" / "wal" / "colors").is_file(),
     }
+
+
+def omarchy_config_installed() -> bool:
+    """True when wallust.toml is the Omarchy palette-only variant."""
+    cfg = wallust_config_dir() / "wallust.toml"
+    pkg = _packaged_wallust_root()
+    if pkg is None or not cfg.is_file():
+        return False
+    return not _files_differ(pkg / "wallust-omarchy.toml", cfg)
+
+
+def install_omarchy_wallust_config() -> int:
+    """Swap in the Omarchy palette-only wallust config (backup when differing).
+
+    On Omarchy all app theming belongs to Omarchy; the full wallust template
+    set would fight it (opencode hook flips tui.json back to theme "wallust",
+    kitty/btop templates overwrite omarchy-managed configs, kitty hook
+    SIGUSR1-reloads on every wallpaper change).
+    """
+    pkg = _packaged_wallust_root()
+    src = pkg / "wallust-omarchy.toml" if pkg else None
+    if src is None or not src.is_file():
+        print("Packaged Omarchy wallust config not found in wallpaperctl install.")
+        return 1
+    cfg_dir = wallust_config_dir()
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    target = cfg_dir / "wallust.toml"
+    if target.is_file():
+        if not _files_differ(src, target):
+            print("wallust.toml: already the Omarchy palette-only variant")
+            return 0
+        backup = target.with_suffix(".toml.bak-wallpaperctl")
+        shutil.copy2(target, backup)
+        print(f"backup:  {backup}")
+    shutil.copy2(src, target)
+    print(f"wrote:   {target}  (palette-only; app theming handled by Omarchy)")
+    return 0
 
 
 def _packaged_wallust_root() -> Path | None:

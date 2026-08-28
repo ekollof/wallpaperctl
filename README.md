@@ -236,7 +236,11 @@ wallpaperctl setup omarchy    # installs prerequisites, creates + activates the 
 This creates **one** persistent user theme, *Dynamic Wallpapers*
 (`~/.config/omarchy/themes/dynamic-wallpapers/`), and activates it. It also
 makes sure the omarchy-shell **Motion Wallpaper** plugin (third-party,
-`nosignal.motion-wallpaper`) is installed and enabled for animated wallpapers.
+`nosignal.motion-wallpaper`) is installed and enabled for animated wallpapers,
+and swaps wallust to a **palette-only config**: on Omarchy, wallpaperctl
+provides the backdrop and the palette while **all app theming is handed to
+Omarchy** (the stock wallust templates/hooks would fight omarchy's generated
+configs and flip opencode back to its own theme on every wallpaper change).
 While that theme is active, every wallpaper change:
 
 1. sets the background via `omarchy theme bg set` (or omarchy's motion-wallpaper for videos),

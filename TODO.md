@@ -84,8 +84,14 @@
     animated wallpapers): verified/installed/enabled via `omarchy plugin add
     https://github.com/28allday/Motion-Wallpaper-Omarchy.git --enable`; soft-skip when
     omarchy plugin management is unavailable
+  - **wallust hand-off**: `setup omarchy` swaps in `wallust-omarchy.toml`
+    (palette-only: colors + colors.json, no templates/hooks, backed up when
+    differing) — the stock config's opencode hook flipped tui.json back to
+    theme "wallust" on every wallpaper change, its kitty/btop templates
+    overwrote omarchy-managed configs, and its kitty hook SIGUSR1-reloaded
+    kitty per run. Stale wallust-rendered artifacts are removed.
   - status for `setup check`: binary, shell running, current theme, theme installed,
-    motion plugin state
+    motion plugin state, wallust config mode
 - [x] `tests/test_omarchy.py` — 33 tests:
   - palette→colors.toml mapping (accent present, charset safety, luminance mode,
     gradient string, TOML round-trip, atomic write)

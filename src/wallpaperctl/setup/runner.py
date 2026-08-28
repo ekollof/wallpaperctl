@@ -142,6 +142,8 @@ def cmd_check(
     print("Wallust:")
     print(f"  binary:  {'yes' if ws['binary'] else 'NO'}")
     print(f"  config:  {ws['config_path']} ({'yes' if ws['config_exists'] else 'missing'})")
+    if ws.get("omarchy_config"):
+        print("  mode:    omarchy palette-only (app theming via omarchy)")
     print(f"  wal cache colors: {'yes' if ws['wal_colors'] else 'missing'}")
     stale_n = len(ws["stale_templates"]) + len(ws["stale_scripts"])
     if stale_n:

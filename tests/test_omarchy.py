@@ -646,6 +646,78 @@ def test_motion_plugin_mgmt_unavailable_is_soft(monkeypatch, tmp_path, capsys):
         assert "plugin management unavailable" in capsys.readouterr().out
 
 
+# ── wallust / omarchy theming hand-off ───────────────────────────────────
+
+
+def test_omarchy_wallust_config_vendored():
+    import tomllib
+
+    from wallpaperctl.setup.wallust_bootstrap import _packaged_wallust_root
+
+    pkg = _packaged_wallust_root()
+    assert pkg is not None
+    src = pkg / "wallust-omarchy.toml"
+    assert src.is_file()
+    data = tomllib.loads(src.read_text(encoding="utf-8"))
+    assert "hooks" not in data
+    tpl = data.get("templates", {})
+    assert set(tpl) == {"colors", "json"}
+    assert data["backend"] == "wal" and data["pywal"] is True
+    targets = " ".join(entry["target"] for entry in tpl.values())
+    for banned in ("kitty", "btop", "opencode", "starship"):
+        assert banned not in targets
+
+
+def test_install_omarchy_wallust_config(monkeypatch, tmp_path):
+    from wallpaperctl.setup.wallust_bootstrap import (
+        install_omarchy_wallust_config,
+        omarchy_config_installed,
+    )
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    cfg = tmp_path / ".config" / "wallust" / "wallust.toml"
+
+    assert install_omarchy_wallust_config() == 0
+    assert cfg.is_file()
+    assert omarchy_config_installed()
+    # idempotent: no extra backup
+    assert install_omarchy_wallust_config() == 0
+    assert not list(tmp_path.glob(".config/wallust/*.bak-wallpaperctl"))
+
+    # differing config gets backed up and replaced
+    cfg.write_text('backend = "full"\n', encoding="utf-8")
+    assert not omarchy_config_installed()
+    assert install_omarchy_wallust_config() == 0
+    assert omarchy_config_installed()
+    backups = list((tmp_path / ".config" / "wallust").glob("*.bak-wallpaperctl"))
+    assert len(backups) == 1 and "full" in backups[0].read_text(encoding="utf-8")
+
+
+def test_setup_swaps_wallust_config(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    wal = tmp_path / ".cache" / "wal"
+    wal.mkdir(parents=True)
+    (wal / "colors.json").write_text(json.dumps(_palette()), encoding="utf-8")
+
+    with (
+        patch("wallpaperctl.setup.omarchy_bootstrap.omarchy_available", return_value=True),
+        patch(
+            "wallpaperctl.setup.omarchy_bootstrap.is_omarchy_shell_running",
+            return_value=True,
+        ),
+        patch("wallpaperctl.setup.omarchy_bootstrap.have", return_value=True),
+        patch("wallpaperctl.setup.omarchy_bootstrap.bootstrap_wallust", return_value=0),
+        patch("wallpaperctl.setup.omarchy_bootstrap.run_omarchy") as run_mock,
+    ):
+        run_mock.return_value.returncode = 0
+        run_mock.return_value.stdout = "[]"
+        assert ob.bootstrap_omarchy(yes=True) == 0
+        cfg = tmp_path / ".config" / "wallust" / "wallust.toml"
+        assert cfg.is_file()
+        assert "generate-wallust-theme" not in cfg.read_text(encoding="utf-8")
+        assert "[hooks]" not in cfg.read_text(encoding="utf-8")
+
+
 # ── registration ─────────────────────────────────────────────────────────
 
 

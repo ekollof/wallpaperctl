@@ -188,6 +188,26 @@ def bootstrap_omarchy(*, yes: bool = False, force: bool = False) -> int:
     if rc != 0:
         print("Warning: wallust bootstrap reported issues; continuing.")
 
+    # Palette-only wallust config: ALL app theming belongs to Omarchy. The
+    # full wallust template set would fight it — its opencode hook flips
+    # tui.json back to theme "wallust" on every wallpaper change, and the
+    # kitty/btop templates overwrite omarchy-managed configs.
+    from wallpaperctl.setup.wallust_bootstrap import install_omarchy_wallust_config
+
+    print()
+    install_omarchy_wallust_config()
+    for stale in (
+        home() / ".config" / "opencode" / "themes" / "wallust.json",
+        home() / ".config" / "kitty" / "current-theme.conf",
+        home() / ".config" / "btop" / "themes" / "noctalia.theme",
+    ):
+        if stale.is_file():
+            try:
+                stale.unlink()
+                print(f"removed: {stale}  (wallust-rendered; omarchy owns this)")
+            except OSError:
+                pass
+
     # Omarchy owns opencode theming (theme "omarchy" + its own TUI plugin);
     # wallpaperctl's wallust hot-reload plugin would fight it over tui.json.
     from wallpaperctl.setup.opencode_bootstrap import remove_opencode_plugin

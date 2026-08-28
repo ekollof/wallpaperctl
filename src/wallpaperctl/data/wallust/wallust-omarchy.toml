@@ -1,0 +1,26 @@
+# wallust config for Omarchy (installed by `wallpaperctl setup omarchy`).
+#
+# On Omarchy, wallpaperctl provides the backdrop and the palette; ALL app
+# theming is handed to Omarchy (omarchy theme set/refresh renders every app
+# config from the dynamic theme's colors.toml). This config therefore only
+# generates the pywal-compatible palette files — no app templates and no
+# hooks: the stock wallust config's opencode hook would flip opencode back
+# to theme "wallust", and its kitty hook would fight omarchy's staged theme.
+#
+# The full template set lives in wallust.toml (used off Omarchy); switch back
+# with `wallpaperctl setup wallust` if you ever leave Omarchy.
+
+backend = "wal"
+color_space = "labmixed"
+threshold = 2
+fallback_colors = ["#FFFFFF", "#000000", "#D3D3D3", "#808080"]
+palette = "kmeans"
+check_contrast = true
+saturation = 45
+alpha = 75
+pywal = true
+
+[templates]
+# Palette outputs consumed by wallpaperctl (OmarchyThemeOp reads colors.json).
+colors = { template = "colors", target = "~/.cache/wal/colors", pywal = true }
+json = { template = "colors.json", target = "~/.cache/wal/colors.json", pywal = true }
