@@ -56,6 +56,7 @@ def bootstrap_wallust(
     force: bool = False,
     yes: bool = False,
     templates_only: bool = False,
+    skip_opencode: bool = False,
 ) -> int:
     """
     Install vendored wallust.toml + templates + hook scripts into ~/.config/wallust.
@@ -138,6 +139,12 @@ def bootstrap_wallust(
         print("  hooks reference: python3 ~/.config/wallust/scripts/…")
 
     print()
+    from wallpaperctl.omarchy import omarchy_available
+
+    if skip_opencode or omarchy_available():
+        # Omarchy owns opencode theming; the wallust plugin would clash with it.
+        print("OpenCode theme hot-reload: skipped (managed by Omarchy).")
+        return 0
     from wallpaperctl.setup.opencode_bootstrap import bootstrap_opencode
 
     print("OpenCode theme hot-reload:")

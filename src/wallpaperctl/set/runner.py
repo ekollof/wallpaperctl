@@ -12,12 +12,14 @@ from wallpaperctl.set.cosmic import CosmicSetter
 from wallpaperctl.set.fallback import FallbackSetter
 from wallpaperctl.set.hyprland import HyprlandSetter
 from wallpaperctl.set.noctalia import NoctaliaSetter
+from wallpaperctl.set.omarchy import OmarchySetter
 from wallpaperctl.set.plasma import PlasmaSetter
 from wallpaperctl.set.xfce import XfceSetter
 
 log = logging.getLogger("wallpaperctl")
 
 SETTERS = [
+    OmarchySetter(),  # before animated: omarchy motion-wallpaper owns video playback
     AnimatedSetter(),
     PlasmaSetter(),
     CosmicSetter(),
@@ -48,7 +50,7 @@ def run_wallpaper_setters(ctx: WallpaperContext) -> tuple[int, int]:
         if ok:
             succeeded += 1
             log.debug("Setter %s ok", setter.name)
-            if setter.name == "animated":
+            if setter.name in ("animated", "omarchy"):
                 break
         else:
             print(f"Warning: Wallpaper operation {setter.name} failed", file=sys.stderr)

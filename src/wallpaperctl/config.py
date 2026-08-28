@@ -74,6 +74,18 @@ class OpsConfig:
     enable_steam_theme: bool = False
     enable_cosmic_theme: bool = True
     enable_cde_theme: bool = True
+    enable_omarchy: bool = True
+    # Omarchy dynamic theme ("Dynamic Wallpapers"); see theme/omarchy.py
+    omarchy_theme_slug: str = "dynamic-wallpapers"
+    omarchy_accent_strategy: str = "warmest"
+    omarchy_timeout: int = 60
+    # Run `omarchy theme refresh` after palette changes (retints all apps).
+    # Turning this off only stages colors.toml; apps pick it up on the next
+    # manual `omarchy theme refresh` / theme re-selection.
+    omarchy_refresh_apps: bool = True
+    # Skip the refresh when the rendered palette is unchanged (e.g. -R reload);
+    # avoids needless terminal/WM churn that interrupts running TUI agents.
+    omarchy_skip_unchanged: bool = True
     cde_restart_dtwm: bool = True
     enable_pywalfox: bool = True
     pywalfox_improve_contrast: bool = True

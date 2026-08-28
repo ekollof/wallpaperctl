@@ -20,6 +20,7 @@ homeassistant = true
 steam_theme = false
 cosmic_theme = true
 cde_theme = true
+omarchy = true
 pywalfox = true
 
 [wallust]
@@ -58,6 +59,13 @@ wallpaper_dir = "~/Wallpapers"
 # cosmic_accent_strategy = "warmest"
 # cosmic_accent_softness = 0.42    # mix accent toward wallpaper bg
 # cosmic_accent_desaturate = 0.22
+
+# Omarchy dynamic theme (see theme/omarchy.py)
+# omarchy_theme_slug = "dynamic-wallpapers"   # displayed as "Dynamic Wallpapers"
+# omarchy_accent_strategy = "warmest"         # palette strategy for colors.toml accent
+# omarchy_timeout = 60                        # omarchy theme refresh budget (seconds)
+# omarchy_refresh_apps = true                 # false = stage colors.toml only, no app retint
+# omarchy_skip_unchanged = true               # skip refresh when palette is unchanged
 
 # Pywalfox (Firefox) — boost colors.json contrast then pywalfox update
 # pywalfox_improve_contrast = true

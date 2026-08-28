@@ -18,6 +18,7 @@ from wallpaperctl.theme.gtk_theme import GtkThemeOp
 from wallpaperctl.theme.homeassistant import HomeassistantOp
 from wallpaperctl.theme.notifications import NotificationsOp
 from wallpaperctl.theme.nwg_look import NwgLookOp
+from wallpaperctl.theme.omarchy import OmarchyThemeOp
 from wallpaperctl.theme.openlinkhub import OpenlinkhubOp
 from wallpaperctl.theme.openrgb import OpenrgbOp
 from wallpaperctl.theme.pywalfox import PywalfoxOp
@@ -30,6 +31,7 @@ log = logging.getLogger("wallpaperctl")
 
 THEME_OPS = [
     WallustOp(),
+    OmarchyThemeOp(),  # needs wallust colors; Dynamic Wallpapers omarchy theme retint
     CosmicThemeOp(),  # needs wallust colors; COSMIC v2 hex accent files
     PywalfoxOp(),  # contrast-boost colors.json + pywalfox update
     XresourcesOp(),

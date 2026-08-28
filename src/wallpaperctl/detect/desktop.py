@@ -20,6 +20,7 @@ class DesktopEnvironment:
     noctalia: bool = False
     awesome: bool = False
     cosmic: bool = False
+    omarchy: bool = False
 
     @property
     def name(self) -> str:
@@ -27,6 +28,8 @@ class DesktopEnvironment:
             return "plasma"
         if self.cosmic:
             return "cosmic"
+        if self.omarchy:
+            return "hyprland+omarchy"
         if self.hyprland and self.noctalia:
             return "hyprland+noctalia"
         if self.hyprland:
@@ -146,6 +149,19 @@ def is_cosmic_running() -> bool:
     return False
 
 
+def is_omarchy_running() -> bool:
+    """Omarchy session (omarchy-shell UI or omarchy user config + tooling)."""
+    from wallpaperctl.omarchy import is_omarchy_shell_running, omarchy_available
+
+    if is_omarchy_shell_running():
+        log.debug("Omarchy detected (omarchy-shell is running)")
+        return True
+    if omarchy_available():
+        log.debug("Omarchy detected (omarchy tooling/config present)")
+        return True
+    return False
+
+
 def detect_desktop() -> DesktopEnvironment:
     de = DesktopEnvironment(
         plasma=is_plasma_running(),
@@ -155,6 +171,7 @@ def detect_desktop() -> DesktopEnvironment:
         noctalia=is_noctalia_running(),
         awesome=is_awesome_running(),
         cosmic=is_cosmic_running(),
+        omarchy=is_omarchy_running(),
     )
     log.debug("Detected desktop: %s", de.name)
     return de

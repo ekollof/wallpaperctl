@@ -474,9 +474,10 @@ def _subcommand_main(argv: list[str]) -> int:
             "wallust-templates",
             "themes",
             "config",
+            "omarchy",
             "all",
         ],
-        help="check | install | wallust | wallust-templates | themes | config | all",
+        help="check | install | wallust | wallust-templates | themes | config | omarchy | all",
     )
     p_setup.add_argument(
         "-y",
@@ -517,7 +518,7 @@ def _subcommand_main(argv: list[str]) -> int:
         print(
             f"  plasma={de.plasma} hyprland={de.hyprland} noctalia={de.noctalia} "
             f"xfce={de.xfce} cinnamon={de.cinnamon} cosmic={de.cosmic} "
-            f"awesome={de.awesome}"
+            f"awesome={de.awesome} omarchy={de.omarchy}"
         )
         if tools.missing_required:
             print("Missing required:")
@@ -539,6 +540,8 @@ def _subcommand_main(argv: list[str]) -> int:
             print(f"  - {name}")
         print("\nWallpaper setters:")
         for name in (
+            "omarchy",
+            "animated",
             "plasma",
             "cosmic",
             "noctalia",

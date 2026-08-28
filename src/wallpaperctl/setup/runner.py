@@ -12,6 +12,7 @@ from wallpaperctl.setup.deps import (
     classify_deps,
     de_profile,
 )
+from wallpaperctl.setup.omarchy_bootstrap import bootstrap_omarchy, omarchy_status
 from wallpaperctl.setup.opencode_bootstrap import opencode_status
 from wallpaperctl.setup.packages import (
     detect_package_manager,
@@ -53,6 +54,8 @@ def run_setup(
         return bootstrap_wallust(force=force, yes=yes, templates_only=True)
     if action in ("config", "bootstrap"):
         return bootstrap_config(force=force)
+    if action == "omarchy":
+        return bootstrap_omarchy(yes=yes, force=force)
     if action in ("themes", "gtk-themes", "flatcolor"):
         return bootstrap_themes(force=force, yes=yes)
     if action in ("all", "init"):
@@ -72,7 +75,7 @@ def run_setup(
 
     print(f"Unknown setup action: {action}", file=sys.stderr)
     print(
-        "Use: check | install | wallust | themes | config | all",
+        "Use: check | install | wallust | themes | config | omarchy | all",
         file=sys.stderr,
     )
     return 1
@@ -149,20 +152,34 @@ def cmd_check(
         print("  Fix: wallpaperctl setup wallust-templates --force")
     else:
         print("  vendored templates/scripts: up to date")
+    ost = omarchy_status()
     oc = opencode_status()
     print("OpenCode (wallust theme reload):")
-    print(
-        f"  plugin:  {'yes' if oc['plugin_installed'] else 'NO — wallpaperctl setup wallust'}"
-        f"{' (outdated)' if oc['plugin_stale'] else ''}"
-    )
-    print(
-        f"  tui.json plugin: "
-        f"{'yes' if oc['plugin_listed'] else 'NO — wallpaperctl setup wallust'}"
-    )
+    if ost["binary"] or ost["theme_installed"]:
+        print("  managed by Omarchy (omarchy theme integration; wallust plugin suppressed)")
+    else:
+        print(
+            f"  plugin:  {'yes' if oc['plugin_installed'] else 'NO — wallpaperctl setup wallust'}"
+            f"{' (outdated)' if oc['plugin_stale'] else ''}"
+        )
+        print(
+            f"  tui.json plugin: "
+            f"{'yes' if oc['plugin_listed'] else 'NO — wallpaperctl setup wallust'}"
+        )
     ts = themes_status()
     print("GTK themes (FlatColor):")
     print(f"  FlatColor:      {'yes' if ts['flatcolor'] else 'NO — wallpaperctl setup themes'}")
     print(f"  FlatColor-dark: {'yes' if ts['flatcolor_dark'] else 'NO'}")
+    print()
+
+    print("Omarchy:")
+    print(f"  binary:        {'yes' if ost['binary'] else 'no'}")
+    print(f"  omarchy-shell: {'running' if ost['shell_running'] else 'not running'}")
+    print(f"  current theme: {ost['current_theme'] or '(none)'}")
+    if ost["theme_installed"]:
+        print(f"  dynamic theme: installed ({ost['theme_dir']})")
+    else:
+        print("  dynamic theme: NO — wallpaperctl setup omarchy")
     print()
 
     if missing_req:
@@ -215,9 +232,10 @@ def cmd_install(de, profile: str, *, yes: bool = False, optional: bool = False) 
                 if pkg:
                     pairs.append((s.dep, pkg))
 
-    # pacman: if wallust-git fails, user can try wallust
+    # pacman: if wallust-git fails, point at the AUR helper / cargo paths
     rc = install_system_packages(pairs, pm, yes=yes)
     if rc != 0 and any(d.id == "wallust" for d, _ in pairs) and pm.id == "pacman":
-        print("If wallust-git failed, try: sudo pacman -S wallust")
-        print("  or: cargo install wallust")
+        print("wallust is AUR-only on Arch (no repo package). Try:")
+        print("  paru -S wallust-git      # or yay -S wallust-git")
+        print("  cargo install wallust")
     return rc if rc else rc_py

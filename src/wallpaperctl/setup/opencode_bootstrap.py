@@ -149,3 +149,45 @@ def bootstrap_opencode(*, force: bool = False) -> int:  # noqa: ARG001
 
     print("  Restart OpenCode once so the wallust theme reloader loads.")
     return 0
+
+
+def remove_opencode_plugin() -> bool:
+    """Remove the wallpaperctl opencode plugin + tui.json registration.
+
+    Used by the Omarchy setup: omarchy owns opencode theming there
+    (theme "omarchy" + its own TUI plugin), and the wallust hot-reload
+    plugin would fight it over the ``theme`` key.
+    """
+    cfg = opencode_config_dir()
+    plugin = cfg / "plugins" / PLUGIN_NAME
+    removed = False
+
+    if plugin.is_file():
+        try:
+            plugin.unlink()
+            print(f"removed: {plugin}")
+            removed = True
+        except OSError as e:
+            print(f"Warning: could not remove {plugin}: {e}")
+
+    tui_path = cfg / "tui.json"
+    if tui_path.is_file():
+        try:
+            tui = json.loads(tui_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            tui = None
+        if isinstance(tui, dict) and (_plugin_listed(tui) or tui.get("theme") == "wallust"):
+            if isinstance(tui.get("plugin"), list):
+                tui["plugin"] = [
+                    p
+                    for p in tui["plugin"]
+                    if p != PLUGIN_SPEC
+                    and not (isinstance(p, list) and p and p[0] == PLUGIN_SPEC)
+                ]
+            if tui.get("theme") == "wallust":
+                # our own marker; omarchy owns theming in this context
+                tui["theme"] = "omarchy"
+            _write_json(tui_path, tui)
+            print(f"updated: {tui_path}  (wallust plugin entry removed)")
+            removed = True
+    return removed

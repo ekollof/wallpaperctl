@@ -15,7 +15,9 @@ class HyprlandSetter:
     name = "hyprland"
 
     def applies(self, ctx: WallpaperContext) -> bool:
-        return ctx.de.hyprland and not ctx.de.noctalia
+        # Omarchy sessions render the background via omarchy-shell (no
+        # hyprpaper); OmarchySetter owns wallpaper changes there.
+        return ctx.de.hyprland and not ctx.de.noctalia and not ctx.de.omarchy
 
     def set_wallpaper(self, ctx: WallpaperContext) -> bool:
         path = ctx.image_path.resolve()
