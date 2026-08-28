@@ -5,8 +5,23 @@ from __future__ import annotations
 import time
 
 from wallpaperctl.context import WallpaperContext
+from wallpaperctl.dbus_session import name_has_owner
 from wallpaperctl.theme.base import debug_op
 from wallpaperctl.util import have, home, pgrep_exact, run, spawn_detached
+
+NOTIFICATIONS_BUS = "org.freedesktop.Notifications"
+
+
+def _foreign_daemon_active() -> bool:
+    """True if a non-dunst/mako daemon owns the notification bus name.
+
+    Covers WMs/desktops with a built-in notification daemon (qtile, GNOME,
+    xfce4-notifyd, ...). Restarting dunst in that case would hijack the bus
+    name away from the WM's own notifier.
+    """
+    if not name_has_owner(NOTIFICATIONS_BUS):
+        return False
+    return not (pgrep_exact("dunst") or pgrep_exact("mako"))
 
 
 class NotificationsOp:
@@ -22,6 +37,13 @@ class NotificationsOp:
         return True
 
     def run(self, ctx: WallpaperContext) -> bool:
+        if _foreign_daemon_active():
+            debug_op(
+                self.name,
+                "notification daemon already active; not starting dunst/mako",
+                ctx,
+            )
+            return True
         if ctx.de.hyprland:
             if have("mako") or have("makoctl"):
                 return self._reload_mako(ctx)
