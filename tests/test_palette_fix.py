@@ -89,6 +89,57 @@ def test_fix_installed_palette_updates_cache(tmp_path: Path) -> None:
     assert "#5a5464" not in (wal / "colors.sh").read_text(encoding="utf-8").lower()
 
 
+def test_fix_skips_opencode_and_kitty_on_omarchy(tmp_path: Path) -> None:
+    wal = tmp_path / "wal"
+    wal.mkdir()
+    payload = _palette(DARK_BG, "#5a5464", "#4a3b55", "#34303c")
+    (wal / "colors.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    calls: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        calls.append(list(args))
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    with (
+        patch("wallpaperctl.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.theme.palette_contrast.run", side_effect=fake_run),
+    ):
+        ok = fix_installed_palette(wal_dir=wal)
+
+    assert ok
+    assert calls == [], f"expected no subprocess on omarchy, got {calls}"
+
+
+def test_fix_regen_opencode_and_kitty_off_omarchy(tmp_path: Path) -> None:
+    wal = tmp_path / "wal"
+    wal.mkdir()
+    payload = _palette(DARK_BG, "#5a5464", "#4a3b55", "#34303c")
+    (wal / "colors.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    calls: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        calls.append(list(args))
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    with (
+        patch("wallpaperctl.omarchy.omarchy_available", return_value=False),
+        patch(
+            "wallpaperctl.theme.palette_contrast.OPENCODE_SCRIPT",
+            tmp_path / "generate-wallust-theme.py",
+        ),
+        patch("wallpaperctl.theme.palette_contrast.run", side_effect=fake_run),
+        patch("wallpaperctl.theme.palette_contrast.have", return_value=True),
+    ):
+        (tmp_path / "generate-wallust-theme.py").write_text("pass", encoding="utf-8")
+        assert fix_installed_palette(wal_dir=wal)
+
+    flat = [" ".join(map(str, c)) for c in calls]
+    assert any("generate-wallust-theme.py" in c for c in flat)
+    assert any("SIGUSR1" in c for c in flat)
+
+
 def _ctx(tmp_path: Path) -> WallpaperContext:
     video = tmp_path / "wall.jpg"
     video.write_bytes(b"img")

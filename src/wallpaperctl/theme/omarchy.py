@@ -284,6 +284,45 @@ class OmarchyThemeOp:
             getattr(ctx.ops, "omarchy_theme_slug", THEME_SLUG)
         )
 
+    def _heal_opencode(self, ctx: WallpaperContext) -> None:
+        """Undo any stray wallust opencode theming (belt and braces).
+
+        Long-running opencode sessions can still carry the removed
+        wallust-hot-reload plugin, and older wallust configs had a hook that
+        flipped tui.json back to theme "wallust" on every wallust run. Fix
+        the registration whenever a wallpaper change touches the theme.
+        """
+        try:
+            tui_path = home() / ".config" / "opencode" / "tui.json"
+            if not tui_path.is_file():
+                return
+            import json
+
+            tui = json.loads(tui_path.read_text(encoding="utf-8"))
+            if not isinstance(tui, dict):
+                return
+            plugins = tui.get("plugin")
+            listed = isinstance(plugins, list) and any(
+                "wallust-hot-reload" in str(p) for p in plugins
+            )
+            if tui.get("theme") != "wallust" and not listed:
+                return
+        except (OSError, ValueError):
+            return
+
+        from wallpaperctl.setup.opencode_bootstrap import remove_opencode_plugin
+
+        debug_op(self.name, "healing stray wallust opencode theming", ctx)
+        remove_opencode_plugin()
+        for stale in (
+            home() / ".config" / "opencode" / "themes" / "wallust.json",
+            *sorted((home() / ".config" / "opencode" / "themes").glob("wallust-hot-*.json")),
+        ):
+            try:
+                stale.unlink()
+            except OSError:
+                pass
+
     def run(self, ctx: WallpaperContext) -> bool:
         slug = getattr(ctx.ops, "omarchy_theme_slug", THEME_SLUG)
         theme_dir = user_theme_dir(slug)
@@ -315,6 +354,8 @@ class OmarchyThemeOp:
             image,
             video_path=ctx.path if ctx.is_animated else None,
         )
+
+        self._heal_opencode(ctx)
 
         if not getattr(ctx.ops, "omarchy_refresh_apps", True):
             debug_op(
