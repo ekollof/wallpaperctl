@@ -35,8 +35,9 @@ installs the remaining system/theme dependencies:
 curl -fsSL https://raw.githubusercontent.com/ekollof/wallpaperctl/main/install.sh | sh
 ```
 
-Flags: `--upgrade` (reinstall), `--from <path|git-url>`, `-y/--yes`
-(non-interactive). After installing, it runs `wallpaperctl setup all`
+Flags: `--upgrade` (force reinstall), `--from <path|git-url>`, `-y/--yes`
+(non-interactive). Re-running the script updates an existing install
+automatically. After installing, it runs `wallpaperctl setup all`
 (dep check + install, config, GTK themes, wallust). On Omarchy follow up
 with `wallpaperctl setup omarchy`.
 

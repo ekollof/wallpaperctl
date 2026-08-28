@@ -32,7 +32,7 @@ usage() {
 Usage: install.sh [options]
 
 Options:
-  --upgrade          Reinstall even if wallpaperctl is already installed
+  --upgrade          Force reinstall (re-runs update automatically anyway)
   --from PATH|URL    Install from a local checkout or git URL (default: auto-detect)
   --yes, -y          Non-interactive: assume yes for prompts
   -h, --help         Show this help
@@ -163,8 +163,18 @@ else
 fi
 
 PIPX_FORCE=""
-if [ "$UPGRADE" -eq 1 ]; then
+INSTALLED=0
+if pipx list --short 2>/dev/null | grep -q "^wallpaperctl "; then
+  INSTALLED=1
+fi
+
+if [ "$UPGRADE" -eq 1 ] || [ "$INSTALLED" -eq 1 ]; then
+  # Re-runs update in place: force-reinstall from the resolved source so the
+  # same version number with changed code still lands.
   PIPX_FORCE="--force"
+  if [ "$INSTALLED" -eq 1 ]; then
+    msg "wallpaperctl is already installed — updating…"
+  fi
 fi
 
 msg "Running: pipx install $PIPX_FORCE $SRC"
