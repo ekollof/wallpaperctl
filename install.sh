@@ -10,8 +10,10 @@
 # packages, desktop tools) are installed afterwards by wallpaperctl itself:
 #
 #   wallpaperctl setup install     # desktop deps via the system package manager
-#   wallpaperctl setup omarchy     # Omarchy prerequisites + dynamic theme
+#   wallpaperctl setup omarchy     # Omarchy: palette-only wallust + dynamic theme
 #   wallpaperctl setup all         # config + themes + check + install + wallust
+#                                  # (on Omarchy this skips FlatColor/hyprpaper and
+#                                  #  runs setup omarchy instead of full wallust)
 
 set -eu
 
@@ -204,10 +206,17 @@ msg "Installed: $("$WALLPAPERCTL_BIN" --version)"
 # ── post-install setup (wallpaperctl installs its own deps from here) ───
 
 msg ""
-msg "Running 'wallpaperctl setup all' (config, themes, dep check + install, wallust)…"
 SETUP_ARGS=""
 if [ "$ASSUME_YES" -eq 1 ]; then
   SETUP_ARGS="-y"
+fi
+# On Omarchy, `setup all` skips FlatColor/hyprpaper/mpvpaper and runs the
+# Omarchy hand-off (palette-only wallust + Dynamic Wallpapers theme) instead
+# of the generic wallust template set that would fight omarchy-managed apps.
+if "$WALLPAPERCTL_BIN" detect 2>/dev/null | grep -q "omarchy=True"; then
+  msg "Omarchy detected — running 'wallpaperctl setup all' (Omarchy-aware)."
+else
+  msg "Running 'wallpaperctl setup all' (config, themes, dep check + install, wallust)…"
 fi
 if ! "$WALLPAPERCTL_BIN" setup all $SETUP_ARGS; then
   warn "setup all reported problems; re-run later with: wallpaperctl setup all"
@@ -217,9 +226,6 @@ msg ""
 msg "Next steps:"
 msg "  wallpaperctl detect            # show detected desktop + tools"
 msg "  wallpaperctl random            # pick and set a wallpaper"
-if "$WALLPAPERCTL_BIN" detect 2>/dev/null | grep -q "omarchy=True"; then
-  msg "  wallpaperctl setup omarchy     # Omarchy 'Dynamic Wallpapers' theme"
-fi
 msg ""
 msg "API keys for remote fetching live in ~/.config/wallpaper/config.sh"
 msg "(UNSPLASH_ACCESS_KEY, PEXELS_API_KEY, PIXABAY_API_KEY) — never in the repo."

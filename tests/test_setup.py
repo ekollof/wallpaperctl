@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 from wallpaperctl.detect.desktop import DesktopEnvironment
 from wallpaperctl.setup import wallust_bootstrap as wb
@@ -12,11 +13,30 @@ from wallpaperctl.setup.deps import (
     de_profile,
 )
 from wallpaperctl.setup.packages import detect_package_manager, packages_to_install
+from wallpaperctl.setup.runner import run_setup
 
 
 def test_de_profile_hyprland_noctalia():
     de = DesktopEnvironment(hyprland=True, noctalia=True)
     assert de_profile(de) == "hyprland+noctalia"
+
+
+def test_de_profile_omarchy():
+    de = DesktopEnvironment(hyprland=True, omarchy=True)
+    assert de_profile(de) == "hyprland+omarchy"
+
+
+def test_omarchy_hides_overlay_deps():
+    de = DesktopEnvironment(hyprland=True, omarchy=True)
+    statuses = classify_deps(de)
+    by_id = {s.dep.id: s for s in statuses}
+    for skipped in ("hyprpaper", "mpvpaper", "xwinwrap", "mpv", "mako", "nwg-look"):
+        assert skipped in by_id
+        assert not by_id[skipped].relevant
+        assert not by_id[skipped].required
+    assert by_id["ffmpeg"].relevant
+    assert by_id["wallust"].relevant
+    assert by_id["hyprctl"].relevant
 
 
 def test_classify_marks_python():
@@ -109,6 +129,9 @@ def test_animated_backend_hint_wayland(monkeypatch):
     # Desktops that own their wallpaper surface
     assert animated_backend_hint(DesktopEnvironment(noctalia=True), statuses) == ""
     assert animated_backend_hint(DesktopEnvironment(xfce=True), statuses) == ""
+    assert "motion-wallpaper" in animated_backend_hint(
+        DesktopEnvironment(hyprland=True, omarchy=True), statuses
+    )
 
 
 def test_animated_backend_hint_x11(monkeypatch):
@@ -128,6 +151,49 @@ def test_animated_backend_hint_needs_mpv(monkeypatch):
     statuses = _fake_statuses()
     _set_present(statuses, "xwinwrap", True)  # xwinwrap without mpv is useless
     assert animated_backend_hint(DesktopEnvironment(), statuses) == ""
+
+
+def test_setup_all_on_omarchy_skips_gtk_and_full_wallust(monkeypatch):
+    from wallpaperctl.setup import runner as sr
+
+    de = DesktopEnvironment(hyprland=True, omarchy=True)
+    with (
+        patch.object(sr, "detect_desktop", return_value=de),
+        patch.object(sr, "bootstrap_config", return_value=0),
+        patch.object(sr, "bootstrap_themes") as themes,
+        patch.object(sr, "cmd_check", return_value=0),
+        patch.object(sr, "cmd_install", return_value=0),
+        patch.object(sr, "bootstrap_omarchy", return_value=0) as omarchy,
+        patch.object(sr, "bootstrap_wallust") as wallust,
+        patch.object(sr, "smoke_test_wallust"),
+    ):
+        assert run_setup("all", yes=True) == 0
+    themes.assert_not_called()
+    omarchy.assert_called_once()
+    wallust.assert_not_called()
+
+
+def test_wallust_bootstrap_writes_omarchy_toml(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    pkg = tmp_path / "pkg"
+    (pkg / "templates").mkdir(parents=True)
+    (pkg / "wallust.toml").write_text("full = true\n", encoding="utf-8")
+    (pkg / "wallust-omarchy.toml").write_text("omarchy = true\n", encoding="utf-8")
+    with (
+        patch.object(wb, "_packaged_wallust_root", return_value=pkg),
+        patch("wallpaperctl.setup.wallust_bootstrap.have", return_value=True),
+        patch(
+            "wallpaperctl.setup.wallust_bootstrap.shutil.which",
+            return_value="/usr/bin/wallust",
+        ),
+        patch("wallpaperctl.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.setup.opencode_bootstrap.bootstrap_opencode") as boot,
+    ):
+        assert wb.bootstrap_wallust(force=True, yes=True) == 0
+        boot.assert_not_called()
+    text = (tmp_path / ".config" / "wallust" / "wallust.toml").read_text(encoding="utf-8")
+    assert "omarchy = true" in text
+    assert "full = true" not in text
 
 
 # ── Wallust bootstrap: script refresh + drift reporting ──────────────────

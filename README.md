@@ -38,8 +38,10 @@ curl -fsSL https://raw.githubusercontent.com/ekollof/wallpaperctl/main/install.s
 Flags: `--upgrade` (force reinstall), `--from <path|git-url>`, `-y/--yes`
 (non-interactive). Re-running the script updates an existing install
 automatically. After installing, it runs `wallpaperctl setup all`
-(dep check + install, config, GTK themes, wallust). On Omarchy follow up
-with `wallpaperctl setup omarchy`.
+(dep check + install, config, GTK themes, wallust). On Omarchy that path
+skips FlatColor/hyprpaper/mpvpaper and runs the Omarchy hand-off
+(palette-only wallust + Dynamic Wallpapers theme) instead of a full
+wallust template set that would fight Omarchy-managed apps.
 
 ### pipx (recommended for CLI tools)
 
@@ -325,8 +327,8 @@ Required for full functionality (soft-deps skip when missing):
    ```bash
    wallpaperctl setup check
    wallpaperctl setup wallust      # templates + wallust.toml + OpenCode theme reloader
-   wallpaperctl setup themes       # FlatColor GTK themes
-   # or: wallpaperctl setup all
+   wallpaperctl setup themes       # FlatColor GTK themes (skipped on Omarchy)
+   # or: wallpaperctl setup all    # on Omarchy: palette-only wallust + setup omarchy
    wallpaperctl migrate            # PATH / config / tools checklist
    ```
 5. Smoke-test **without** removing shell tools yet:

@@ -199,7 +199,7 @@ DEPS: list[Dep] = [
         Kind.DE,
         "hyprctl",
         pacman="hyprland",
-        for_de=("hyprland", "hyprland+noctalia"),
+        for_de=("hyprland", "hyprland+noctalia", "hyprland+omarchy"),
     ),
     Dep(
         "hyprpaper",
@@ -208,7 +208,7 @@ DEPS: list[Dep] = [
         "hyprpaper",
         pacman="hyprpaper",
         for_de=("hyprland",),
-        notes="Not needed when Noctalia manages wallpaper",
+        notes="Not needed when Noctalia or Omarchy manages wallpaper",
     ),
     # Noctalia
     Dep(
@@ -351,9 +351,26 @@ class DepStatus:
     required: bool
 
 
+# Overlay players / DE tools Omarchy already provides (or fights).
+_OMARCHY_SKIP_IDS = frozenset(
+    {
+        "hyprpaper",
+        "mpvpaper",
+        "xwinwrap",
+        "socat",
+        "mpv",
+        "mako",
+        "xsettingsd",
+        "nwg-look",
+    }
+)
+
+
 def de_profile(de: DesktopEnvironment) -> str:
     if de.plasma:
         return "plasma"
+    if de.omarchy:
+        return "hyprland+omarchy"
     if de.hyprland and de.noctalia:
         return "hyprland+noctalia"
     if de.hyprland:
@@ -392,11 +409,15 @@ def classify_deps(
             elif dep.kind == Kind.DE:
                 required = True
                 # hyprpaper not required under noctalia
-                if dep.id == "hyprpaper" and de.noctalia:
+                if dep.id == "hyprpaper" and (de.noctalia or de.omarchy):
                     required = False
-                    relevant = not de.noctalia
+                    relevant = False
             else:
                 required = False
+
+        if de.omarchy and dep.id in _OMARCHY_SKIP_IDS:
+            relevant = False
+            required = False
 
         if not include_optional and dep.kind == Kind.OPTIONAL and not required:
             if not (relevant and dep.kind == Kind.DE):
@@ -425,6 +446,8 @@ def animated_backend_hint(
     Mirrors the backend selection of set/animated.AnimatedSetter.
     """
     present = {s.dep.id for s in statuses if s.present}
+    if de.omarchy:
+        return "omarchy-shell motion-wallpaper"
     if "mpv" not in present:
         return ""
     if os.environ.get("WAYLAND_DISPLAY"):

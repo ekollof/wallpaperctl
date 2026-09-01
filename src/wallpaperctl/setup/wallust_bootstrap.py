@@ -136,7 +136,25 @@ def bootstrap_wallust(
 
     # --- wallust.toml ---
     if not templates_only:
-        if cfg.is_file() and not force:
+        from wallpaperctl.omarchy import omarchy_available
+
+        if omarchy_available() and (pkg / "wallust-omarchy.toml").is_file():
+            stock_full = pkg / "wallust.toml"
+            leftover_full = cfg.is_file() and stock_full.is_file() and not _files_differ(
+                stock_full, cfg
+            )
+            if not cfg.is_file() or leftover_full or force:
+                # Missing, still the vendored full template set, or --force:
+                # land on palette-only (a leftover full set fights omarchy).
+                install_omarchy_wallust_config()
+            elif omarchy_config_installed():
+                print("wallust.toml: already the Omarchy palette-only variant")
+            else:
+                print(
+                    f"exists:  {cfg} (Omarchy: wallpaperctl setup omarchy "
+                    "swaps this to palette-only)"
+                )
+        elif cfg.is_file() and not force:
             print(f"exists:  {cfg} (use --force to replace; templates still filled)")
         else:
             if cfg.is_file() and force:

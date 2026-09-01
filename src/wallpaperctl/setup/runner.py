@@ -61,12 +61,22 @@ def run_setup(
     if action in ("all", "init"):
         print("=== 1/5 config directories ===")
         bootstrap_config(force=force)
-        print("\n=== 2/5 FlatColor GTK themes ===")
-        bootstrap_themes(force=force, yes=yes)
+        if de.omarchy:
+            print("\n=== 2/5 FlatColor GTK themes ===")
+            print("Skipped: Omarchy owns GTK (Adwaita via omarchy-theme-set-gnome).")
+        else:
+            print("\n=== 2/5 FlatColor GTK themes ===")
+            bootstrap_themes(force=force, yes=yes)
         print("\n=== 3/5 dependency check ===")
         cmd_check(de, profile, optional=optional)
         print("\n=== 4/5 install missing packages ===")
         cmd_install(de, profile, yes=yes, optional=optional)
+        if de.omarchy:
+            print("\n=== 5/5 omarchy (wallust palette-only + Dynamic Wallpapers) ===")
+            rc = bootstrap_omarchy(yes=yes, force=force)
+            print()
+            print("Done. Try: wallpaperctl detect && wallpaperctl random")
+            return rc
         print("\n=== 5/5 wallust ===")
         bootstrap_wallust(force=force, yes=yes)
         smoke_test_wallust()
@@ -92,8 +102,8 @@ def cmd_check(
     print("=" * 40)
     print(f"Desktop:  {de.name}  (profile={profile})")
     print(
-        f"  plasma={de.plasma} hyprland={de.hyprland} noctalia={de.noctalia} "
-        f"xfce={de.xfce} cinnamon={de.cinnamon}"
+        f"  plasma={de.plasma} hyprland={de.hyprland} omarchy={de.omarchy} "
+        f"noctalia={de.noctalia} xfce={de.xfce} cinnamon={de.cinnamon}"
     )
     pm = detect_package_manager()
     print(f"Packages: {pm.name if pm else 'none detected (manual install)'}")
@@ -170,8 +180,11 @@ def cmd_check(
         )
     ts = themes_status()
     print("GTK themes (FlatColor):")
-    print(f"  FlatColor:      {'yes' if ts['flatcolor'] else 'NO — wallpaperctl setup themes'}")
-    print(f"  FlatColor-dark: {'yes' if ts['flatcolor_dark'] else 'NO'}")
+    if de.omarchy:
+        print("  skipped (Omarchy uses Adwaita; wallpaperctl setup themes is a no-op here)")
+    else:
+        print(f"  FlatColor:      {'yes' if ts['flatcolor'] else 'NO — wallpaperctl setup themes'}")
+        print(f"  FlatColor-dark: {'yes' if ts['flatcolor_dark'] else 'NO'}")
     print()
 
     print("Omarchy:")
