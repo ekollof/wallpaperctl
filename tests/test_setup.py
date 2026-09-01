@@ -106,8 +106,9 @@ def test_animated_backend_hint_wayland(monkeypatch):
     assert "mpvpaper" in animated_backend_hint(
         DesktopEnvironment(hyprland=True), statuses
     )
-    # Noctalia/COSMIC own their wallpaper surface
+    # Desktops that own their wallpaper surface
     assert animated_backend_hint(DesktopEnvironment(noctalia=True), statuses) == ""
+    assert animated_backend_hint(DesktopEnvironment(xfce=True), statuses) == ""
 
 
 def test_animated_backend_hint_x11(monkeypatch):

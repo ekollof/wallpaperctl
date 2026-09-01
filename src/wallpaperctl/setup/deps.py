@@ -428,8 +428,8 @@ def animated_backend_hint(
     if "mpv" not in present:
         return ""
     if os.environ.get("WAYLAND_DISPLAY"):
-        # Noctalia and COSMIC own their wallpaper surfaces.
-        if de.cosmic or de.noctalia:
+        # These desktops own the wallpaper surface; video overlay is skipped.
+        if de.cosmic or de.noctalia or de.xfce or de.cinnamon:
             return ""
         return "mpvpaper (Wayland)" if "mpvpaper" in present else ""
     if os.environ.get("DISPLAY"):

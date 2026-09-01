@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import signal
+import socket
 import stat
 import subprocess
 import time
@@ -64,7 +66,15 @@ class AnimatedSetter:
     _log_file = _state_dir / "animated.log"
 
     def applies(self, ctx: WallpaperContext) -> bool:
-        return ctx.is_animated
+        if not ctx.is_animated:
+            return False
+        # These desktops own the wallpaper surface; the extracted still is
+        # applied by their native setter instead of an overlay player.
+        if ctx.de.cosmic or ctx.de.noctalia:
+            return False
+        if os.environ.get("WAYLAND_DISPLAY") and (ctx.de.xfce or ctx.de.cinnamon):
+            return False
+        return True
 
     @classmethod
     def stop_active(cls) -> None:
@@ -74,8 +84,14 @@ class AnimatedSetter:
     def set_wallpaper(self, ctx: WallpaperContext) -> bool:
         if not ctx.path.is_file():
             return False
-        if os.environ.get("WAYLAND_DISPLAY") and self._wayland_supported(ctx):
-            return self._set_mpvpaper(ctx)
+        if os.environ.get("WAYLAND_DISPLAY"):
+            if self._wayland_supported(ctx):
+                return self._set_mpvpaper(ctx)
+            # Never fall through to xwinwrap via XWayland DISPLAY — that
+            # creates stray X windows on desktops that already own the
+            # wallpaper surface (Noctalia, COSMIC, XFCE/Cinnamon Wayland).
+            debug_set(self.name, "desktop owns wallpaper surface; skipping video overlay", ctx)
+            return False
         if os.environ.get("DISPLAY"):
             return self._set_x11(ctx)
         debug_set(self.name, "no animated backend available", ctx)
@@ -136,6 +152,7 @@ class AnimatedSetter:
         )
         # ffmpeg writes *partial*; we copy to a stable path once size settles
         # so feh never mmaps a half-written JPEG (SIGBUS under EXWM/picom).
+        # Size via `wc -c` (POSIX); no GNU `stat -c` / `seq`.
         script = f"""
 set +e
 PARTIAL={partial!s}
@@ -146,22 +163,26 @@ ffmpeg -hide_banner -loglevel error -nostdin \\
   -vf {vf!r} -q:v 5 -update 1 "$PARTIAL" &
 FP=$!
 trap 'kill "$FP" 2>/dev/null; wait "$FP" 2>/dev/null; exit 0' EXIT INT TERM
-for i in $(seq 1 80); do
+n=0
+while [ "$n" -lt 80 ]; do
   [ -s "$PARTIAL" ] && break
   kill -0 "$FP" 2>/dev/null || exit 1
   sleep 0.1
+  n=$((n + 1))
 done
 LAST=0
+_file_size() {{ wc -c < "$1" 2>/dev/null | tr -d '[:space:]'; }}
 while kill -0 "$FP" 2>/dev/null; do
   if [ -s "$PARTIAL" ]; then
-    S1=$(stat -c %s "$PARTIAL" 2>/dev/null || echo 0)
+    S1=$(_file_size "$PARTIAL")
+    S1=${{S1:-0}}
     sleep 0.02
-    S2=$(stat -c %s "$PARTIAL" 2>/dev/null || echo 0)
-    MT=$(stat -c %Y "$PARTIAL" 2>/dev/null || echo 0)
-    if [ "$S1" = "$S2" ] && [ "$S1" -gt 1000 ] && [ "$MT" != "$LAST" ]; then
+    S2=$(_file_size "$PARTIAL")
+    S2=${{S2:-0}}
+    if [ "$S1" = "$S2" ] && [ "$S1" -gt 1000 ] && [ "$S1" != "$LAST" ]; then
       cp -f "$PARTIAL" "$FRAME" 2>/dev/null || continue
       feh --no-fehbg --bg-fill "$FRAME" >/dev/null 2>&1 || true
-      LAST=$MT
+      LAST=$S1
     fi
   fi
   sleep 0.08
@@ -202,19 +223,27 @@ wait "$FP" || true
 
     @staticmethod
     def _wayland_supported(ctx: WallpaperContext) -> bool:
-        # KWin supports the layer-shell protocol used by mpvpaper. Noctalia and
-        # COSMIC own their wallpaper surfaces, so avoid competing with them.
-        return not (ctx.de.cosmic or ctx.de.noctalia)
+        # KWin supports the layer-shell protocol used by mpvpaper. Desktops
+        # that own the wallpaper surface would fight an overlay player.
+        return not (
+            ctx.de.cosmic
+            or ctx.de.noctalia
+            or ctx.de.xfce
+            or ctx.de.cinnamon
+        )
 
     def _set_mpvpaper(self, ctx: WallpaperContext) -> bool:
         if not have("mpvpaper") or not have("mpv"):
             debug_set(self.name, "mpvpaper or mpv not found", ctx)
             return False
+        # Still underlay first (letterbox / newly connected outputs). Then
+        # reuse a live mpvpaper via IPC so video-to-video is a loadfile, not
+        # a kill/restart flash.
+        self._set_static_underlay(ctx)
+        if self._reload_running_player(ctx.path):
+            debug_set(self.name, f"mpvpaper loadfile {ctx.path.name}", ctx)
+            return True
         self._stop_previous()
-        if ctx.de.plasma:
-            # mpvpaper leaves aspect-ratio margins transparent; refresh the
-            # Plasma image underneath (aspect-fit + black) before playback.
-            self._set_static_underlay(ctx)
         layer = "bottom" if ctx.de.plasma else "background"
 
         mpv_options = " ".join(
@@ -262,27 +291,35 @@ wait "$FP" || true
 
         AnimatedSetter short-circuits the setter chain on success, so without
         this the old static wallpaper stays visible in letterbox margins (and
-        whenever xwinwrap/mpv fails to cover an output). Plasma Wayland already
-        did this; X11/XLibre needs the same.
+        whenever xwinwrap/mpv fails to cover an output). Uses the DE-native
+        setter (Plasma, Hyprland/hyprpaper, XFCE, Cinnamon) when one applies.
         """
         img = ctx.image_path
         if img is None or not img.is_file() or img == ctx.path:
             debug_set(self.name, "no still frame for underlay", ctx)
             return False
         if ctx.de.plasma:
-            ok = PlasmaSetter().set_wallpaper(ctx)
-            debug_set(
-                self.name,
-                "plasma still underlay ok" if ok else "plasma still underlay failed",
-                ctx,
-            )
-            return ok
-        from wallpaperctl.set.fallback import FallbackSetter
+            setter: object = PlasmaSetter()
+        elif ctx.de.xfce:
+            from wallpaperctl.set.xfce import XfceSetter
 
-        ok = FallbackSetter().set_wallpaper(ctx)
+            setter = XfceSetter()
+        elif ctx.de.cinnamon:
+            from wallpaperctl.set.cinnamon import CinnamonSetter
+
+            setter = CinnamonSetter()
+        elif ctx.de.hyprland and not ctx.de.noctalia and not ctx.de.omarchy:
+            from wallpaperctl.set.hyprland import HyprlandSetter
+
+            setter = HyprlandSetter()
+        else:
+            from wallpaperctl.set.fallback import FallbackSetter
+
+            setter = FallbackSetter()
+        ok = bool(setter.set_wallpaper(ctx))  # type: ignore[attr-defined]
         debug_set(
             self.name,
-            f"still underlay {'ok' if ok else 'failed'} ({img.name})",
+            f"still underlay via {setter.name} {'ok' if ok else 'failed'} ({img.name})",
             ctx,
         )
         return ok
@@ -383,18 +420,46 @@ wait "$FP" || true
         )
         return [["-g", geometry] for geometry in geometries] or [["-fs"]]
 
-    def _stop_previous(self) -> None:
-        if have("socat") and _is_socket(self._socket):
-            run(["socat", "-", str(self._socket)], input_text="quit\n", timeout=2)
-        pids: set[int] = set()
+    def _reload_running_player(self, video: Path) -> bool:
+        """Ask a live mpvpaper to load a new file instead of restarting it."""
+        if not _is_socket(self._socket):
+            return False
+        pids = self._pids_from_file()
+        if not pids or not all(self._alive(pid) for pid in pids):
+            return False
+        return self._mpv_ipc(["loadfile", str(video.resolve()), "replace"])
+
+    def _mpv_ipc(self, command: list[str]) -> bool:
+        """JSON IPC to the mpv instance behind mpvpaper (no socat)."""
+        if not _is_socket(self._socket):
+            return False
+        payload = (json.dumps({"command": command}) + "\n").encode("utf-8")
         try:
-            pids.update(
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                sock.settimeout(2.0)
+                sock.connect(str(self._socket))
+                sock.sendall(payload)
+                sock.recv(4096)
+            finally:
+                sock.close()
+        except OSError:
+            return False
+        return True
+
+    def _pids_from_file(self) -> set[int]:
+        try:
+            return {
                 int(line)
                 for line in self._pid_file.read_text(encoding="utf-8").splitlines()
                 if line.strip()
-            )
+            }
         except (OSError, ValueError):
-            pass
+            return set()
+
+    def _stop_previous(self) -> None:
+        self._mpv_ipc(["quit"])
+        pids: set[int] = set(self._pids_from_file())
         if have("pgrep"):
             for pattern in _STALE_PROCESS_PATTERNS:
                 result = run(["pgrep", "-f", pattern], timeout=5)
