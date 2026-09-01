@@ -13,8 +13,6 @@ import logging
 
 from wallpaperctl.context import WallpaperContext
 from wallpaperctl.omarchy import (
-    THEME_SLUG,
-    is_dynamic_theme_active,
     motion_wallpaper_play,
     motion_wallpaper_playing,
     motion_wallpaper_stop,
@@ -72,28 +70,11 @@ class OmarchySetter:
             )
             if r.returncode != 0:
                 debug_set(self.name, "still underlay via omarchy failed", ctx)
-        # When the Dynamic Wallpapers theme op will run, it stages
-        # wallpaper-video.* and `omarchy theme refresh` already plays it via
-        # the motion-wallpaper theme-set hook. Starting playback here as well
-        # restarts the player (visible flash) once refresh finishes.
-        if _theme_op_will_drive_motion(ctx):
-            debug_set(
-                self.name,
-                f"underlay set; motion play deferred to theme op ({video.name})",
-                ctx,
-            )
-            return True
+        # Same as a video-capable Omarchy theme (e.g. andrath-terminal): play
+        # through shell IPC. Do not go through `omarchy theme set` / theme-set
+        # hooks — that reloads Hyprland and snaps autorotation.
         if not motion_wallpaper_play(video, timeout=10):
             debug_set(self.name, "motion-wallpaper play failed", ctx)
             return False
         debug_set(self.name, f"motion wallpaper playing: {video.name}", ctx)
         return True
-
-
-def _theme_op_will_drive_motion(ctx: WallpaperContext) -> bool:
-    if not getattr(ctx.ops, "operations_enabled", True):
-        return False
-    if not getattr(ctx.ops, "enable_omarchy", True):
-        return False
-    slug = getattr(ctx.ops, "omarchy_theme_slug", THEME_SLUG)
-    return is_dynamic_theme_active(slug)

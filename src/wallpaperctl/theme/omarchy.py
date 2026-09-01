@@ -1,13 +1,15 @@
 """Omarchy dynamic theme operation.
 
-Maps the wallust palette (~/.cache/wal/colors.json) onto the persistent
-"Dynamic Wallpapers" Omarchy theme (colors.toml), keeps the theme's
-backgrounds/ and wallpaper-video staging in sync with the active wallpaper,
-then re-applies the theme through official tooling (`omarchy theme refresh`)
-so every Omarchy-managed app gets retinted from templates.
+Maps the wallust palette onto the persistent "Dynamic Wallpapers" theme
+(colors.toml), keeps backgrounds/ and wallpaper-video staging in sync, then
+retints the running session the same way a video-capable Omarchy theme does:
+live shell palette, Kitty SIGUSR1, Hyprland border ``keyword``s.
 
-The op is inert unless the dynamic theme is the active Omarchy theme; in that
-case it never creates new themes — only updates colors within the one theme.
+Wallpaper changes are not theme switches. Do not run ``omarchy theme set`` /
+``theme refresh`` (that ``hyprctl reload``s and snaps autorotation). Screen
+rotate rebinding stays in ``omarchy_watch``.
+
+The op is inert unless the dynamic theme is already active.
 """
 
 from __future__ import annotations
@@ -23,15 +25,14 @@ from wallpaperctl.omarchy import (
     THEME_SLUG,
     apply_shell_theme_live,
     is_dynamic_theme_active,
-    motion_wallpaper_play,
     omarchy_available,
-    run_omarchy,
+    omarchy_env,
     user_theme_dir,
 )
 from wallpaperctl.theme.base import debug_op
 from wallpaperctl.theme.cosmic import pick_accent
 from wallpaperctl.theme.pywalfox import load_colors_json
-from wallpaperctl.util import hex_to_rgb, home
+from wallpaperctl.util import have, hex_to_rgb, home, run
 
 log = logging.getLogger("wallpaperctl")
 
@@ -274,6 +275,123 @@ def write_palette_preview(theme_dir: Path, mapping: dict[str, str]) -> bool:
         return False
 
 
+# Live retint only. Never omarchy-restart-hyprctl / theme-set / theme-refresh:
+# those `hyprctl reload` and re-run monitors.lua (autorotation snaps back).
+_RETINT_COMMANDS = ("omarchy-restart-terminal",)
+
+
+def _current_theme_dirs() -> tuple[Path, Path]:
+    state = home() / ".local" / "state" / "omarchy" / "current"
+    return state / "theme", state / "next-theme"
+
+
+def _stage_next_theme(theme_dir: Path) -> bool:
+    """Put wallust-derived colors.toml where omarchy-theme-set-templates reads.
+
+    Only palette files — not current/theme (stale generated kitty/hyprland)
+    and not wallpaper-video (templates do not need the clip).
+    """
+    _, nxt = _current_theme_dirs()
+    colors = theme_dir / "colors.toml"
+    if not colors.is_file():
+        return False
+    try:
+        if nxt.exists():
+            shutil.rmtree(nxt)
+        nxt.mkdir(parents=True)
+        shutil.copy2(colors, nxt / "colors.toml")
+        shell = theme_dir / "shell.toml"
+        if shell.is_file():
+            shutil.copy2(shell, nxt / "shell.toml")
+        return True
+    except OSError as e:
+        log.debug("omarchy theme: failed to stage next-theme: %s", e)
+        return False
+
+
+def _install_generated_into_current() -> bool:
+    """Copy generated configs over current/theme, never replacing the directory.
+
+    Skip ``*.lua``. Hyprland auto-reloads when ``omarchy.current.theme.hyprland``
+    (or ``gum_env``) changes, which re-runs monitors.lua and snaps autorotation
+    to the saved laptop profile.
+    """
+    current, nxt = _current_theme_dirs()
+    if not nxt.is_dir():
+        return False
+    try:
+        current.mkdir(parents=True, exist_ok=True)
+        for item in nxt.iterdir():
+            if item.suffix == ".lua":
+                continue
+            target = current / item.name
+            if item.is_dir():
+                if target.exists():
+                    shutil.rmtree(target)
+                shutil.copytree(item, target, symlinks=True)
+            elif item.is_file() or item.is_symlink():
+                shutil.copy2(item, target)
+        shutil.rmtree(nxt)
+        return True
+    except OSError as e:
+        log.debug("omarchy theme: failed to install generated theme: %s", e)
+        return False
+
+
+def _hypr_keywords_from_mapping(mapping: dict[str, str]) -> list[tuple[str, str]]:
+    """Border ``hyprctl keyword`` pairs from the wallust→Omarchy color mapping."""
+    pairs: list[tuple[str, str]] = []
+    active = (mapping.get("hyprland_active_border") or "").strip()
+    inactive = (mapping.get("hyprland_inactive_border") or "rgba(595959aa)").strip()
+    if active:
+        pairs.append(("general:col.active_border", active))
+        pairs.append(("group:col.border_active", active))
+    if inactive:
+        pairs.append(("general:col.inactive_border", inactive))
+        pairs.append(("group:col.border_inactive", inactive))
+    return pairs
+
+
+def _apply_hypr_borders(mapping: dict[str, str]) -> None:
+    """Live border colors via ``hyprctl keyword`` — does not write hyprland.lua."""
+    if not have("hyprctl"):
+        return
+    for option, value in _hypr_keywords_from_mapping(mapping):
+        run(["hyprctl", "keyword", option, value], timeout=5)
+
+
+def retint_without_compositor_reload(
+    theme_dir: Path,
+    slug: str,
+    mapping: dict[str, str] | None = None,
+) -> bool:
+    """Render Kitty (etc.) from wallust colors; retint Hypr borders via keyword."""
+    del slug  # kept so callers stay (theme_dir, slug)
+    if not have("omarchy-theme-set-templates"):
+        return False
+    if not _stage_next_theme(theme_dir):
+        return False
+    r = run(
+        ["omarchy-theme-set-templates"],
+        timeout=30,
+        env=omarchy_env(),
+    )
+    if r.returncode != 0:
+        log.debug(
+            "omarchy-theme-set-templates failed: %s",
+            (r.stderr or r.stdout or "")[:200],
+        )
+        return False
+    if not _install_generated_into_current():
+        return False
+    if mapping:
+        _apply_hypr_borders(mapping)
+    for cmd in _RETINT_COMMANDS:
+        if have(cmd):
+            run([cmd], timeout=20)
+    return True
+
+
 class OmarchyThemeOp:
     name = "omarchy"
 
@@ -361,62 +479,40 @@ class OmarchyThemeOp:
 
         palette_changed = previous is None or previous != rendered
         if palette_changed:
-            # Bar/chrome pick up the new palette now; the full refresh below
-            # still retints terminals and apps (and is the slow/disruptive bit).
             if apply_shell_theme_live(colors_file, theme_dir / "shell.toml"):
                 debug_op(self.name, "omarchy-shell palette applied live", ctx)
 
-        refreshed = False
         if not getattr(ctx.ops, "omarchy_refresh_apps", True):
             debug_op(
                 self.name,
-                "omarchy_refresh_apps disabled: colors.toml staged only "
-                "(applied on next theme set/refresh)",
+                "omarchy_refresh_apps disabled: colors.toml staged only",
                 ctx,
             )
         elif (
             getattr(ctx.ops, "omarchy_skip_unchanged", True)
             and not palette_changed
         ):
-            # Palette unchanged (e.g. -R reload of the same wallpaper): skip
-            # the app-retint churn — it restarts terminals/WM config and
-            # interrupts running TUI agents (known Omarchy upstream annoyance).
-            debug_op(self.name, "palette unchanged; skipping theme refresh", ctx)
+            debug_op(self.name, "palette unchanged; skipping app retint", ctx)
         else:
-            timeout = float(getattr(ctx.ops, "omarchy_timeout", 60))
-            r = run_omarchy(["theme", "refresh"], timeout=timeout)
-            if r.returncode != 0:
-                debug_op(
-                    self.name,
-                    f"omarchy theme refresh failed (rc={r.returncode}), trying theme set",
-                    ctx,
-                )
-                r = run_omarchy(
-                    ["theme", "set", slug],
-                    timeout=timeout,
-                    env_extra={"OMARCHY_THEME_SKIP_BACKGROUND": "1"},
-                )
-            if r.returncode != 0:
-                debug_op(
-                    self.name,
-                    f"omarchy theme set failed: {(r.stderr or r.stdout or '')[:200]}",
-                    ctx,
-                )
+            from wallpaperctl.omarchy_watch import (
+                restore_monitor_transforms,
+                snapshot_monitor_transforms,
+                suppress_layout_rebind,
+            )
+
+            # If Hyprland still auto-reloads for any other reason, put the
+            # runtime transform back. Do not leave monitors.lua's landscape.
+            transforms = snapshot_monitor_transforms()
+            suppress_layout_rebind(8.0)
+            if retint_without_compositor_reload(theme_dir, slug, mapping):
+                debug_op(self.name, "kitty/hypr retinted from wallust palette", ctx)
             else:
-                refreshed = True
-                debug_op(self.name, "theme refreshed via omarchy", ctx)
-
-        # Setter defers motion-wallpaper play when this op will run, because
-        # `omarchy theme refresh` already starts it via the theme-set hook.
-        # If we skipped or failed the refresh, start playback here.
-        if ctx.is_animated and not refreshed:
-            video = ctx.path
-            if video.is_file() and not motion_wallpaper_play(video, timeout=10):
-                debug_op(self.name, f"motion-wallpaper play failed: {video.name}", ctx)
-                return False
-
-        if getattr(ctx.ops, "omarchy_refresh_apps", True) and palette_changed:
-            return refreshed
+                debug_op(
+                    self.name,
+                    "live retint skipped (no omarchy-theme-set-templates?)",
+                    ctx,
+                )
+            restore_monitor_transforms(transforms)
         return True
 
 

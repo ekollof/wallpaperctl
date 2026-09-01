@@ -156,9 +156,8 @@ def apply_shell_theme_live(
 ) -> bool:
     """Push a new palette to the running omarchy-shell without a full refresh.
 
-    ``omarchy theme refresh`` still has to retint terminals and apps; this
-    only makes the bar/background chrome pick up colors.toml immediately so
-    the desktop does not sit on the old palette while that work runs.
+    Only the bar/chrome. Kitty and Hyprland borders are retinted separately
+    from the generated theme files (no compositor reload).
     """
     if not colors_file.is_file():
         return False

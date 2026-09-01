@@ -109,8 +109,117 @@ def _is_socket(path: Path) -> bool:
         return False
 
 
-def rebind_motion_wallpaper() -> bool:
+_SUPPRESS_FILE = _WATCH_DIR / "omarchy-motion-suppress"
+
+
+def suppress_layout_rebind(seconds: float = 8.0) -> None:
+    """Ignore layout changes for a bit (theme refresh reloads Hyprland)."""
+    _WATCH_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        _SUPPRESS_FILE.write_text(str(time.time() + max(0.0, seconds)), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _rebind_suppressed() -> bool:
+    try:
+        until = float(_SUPPRESS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return time.time() < until
+
+
+def snapshot_monitor_transforms(payload: str | None = None) -> list[tuple[str, int]]:
+    """[(connector, transform), ...] from hyprctl JSON or an injected payload."""
+    text = payload
+    if text is None:
+        r = run(["hyprctl", "-j", "monitors"], timeout=2)
+        if r.returncode != 0:
+            return []
+        text = r.stdout or ""
+    try:
+        import json
+
+        mons = json.loads(text)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(mons, list):
+        return []
+    out: list[tuple[str, int]] = []
+    for mon in mons:
+        if not isinstance(mon, dict):
+            continue
+        name = str(mon.get("name") or "").strip()
+        if not name or name.startswith("."):
+            continue
+        try:
+            transform = int(mon.get("transform") or 0)
+        except (TypeError, ValueError):
+            transform = 0
+        out.append((name, transform))
+    return out
+
+
+def _hypr_eval(expr: str) -> bool:
+    r = run(["hyprctl", "eval", expr], timeout=5)
+    if r.returncode != 0 or "ok" not in (r.stdout or "").lower():
+        log.debug("hyprctl eval failed %s: %s", expr, (r.stderr or r.stdout or "")[:160])
+        return False
+    return True
+
+
+def _touch_device_names() -> list[str]:
+    r = run(["hyprctl", "-j", "devices"], timeout=2)
+    if r.returncode != 0:
+        return []
+    try:
+        import json
+
+        data = json.loads(r.stdout or "{}")
+    except (ValueError, TypeError):
+        return []
+    names: list[str] = []
+    for item in data.get("touch") or []:
+        if isinstance(item, dict) and item.get("name"):
+            names.append(str(item["name"]))
+    return names
+
+
+def restore_monitor_transforms(snapshot: list[tuple[str, int]]) -> bool:
+    """Re-apply runtime transforms after ``hyprctl reload`` stomps monitors.lua.
+
+    Uses the same ``hyprctl eval hl.monitor({...})`` path as the machine's
+    autorotate daemon. Retries briefly because Hyprland can finish applying
+    the reloaded config *after* ``hyprctl reload`` returns.
+    """
+    if not snapshot:
+        return True
+    deadline = time.monotonic() + 1.6
+    last_ok = False
+    while True:
+        current = {name: t for name, t in snapshot_monitor_transforms()}
+        pending = [(n, t) for n, t in snapshot if current.get(n) != t]
+        if not pending:
+            return True
+        if time.monotonic() >= deadline:
+            return last_ok
+        for name, transform in pending:
+            last_ok = _hypr_eval(
+                f'hl.monitor({{ output = "{name}", transform = {transform} }})'
+            )
+            # Touch digitizer transform must match the panel (autorotate.py).
+            for touch in _touch_device_names():
+                escaped = touch.replace("\\", "\\\\").replace('"', '\\"')
+                _hypr_eval(
+                    f'hl.device({{ name = "{escaped}", transform = {transform} }})'
+                )
+        time.sleep(0.12)
+
+
+def rebind_motion_wallpaper(*, force: bool = False) -> bool:
     """Stop+play the persisted clip so surfaces are recreated after a rotate."""
+    if not force and _rebind_suppressed():
+        return False
     path = motion_state_file()
     try:
         import json

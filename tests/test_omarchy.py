@@ -42,10 +42,20 @@ def _no_real_process_signals(monkeypatch):
         "wallpaperctl.theme.omarchy.apply_shell_theme_live", lambda *a, **k: True
     )
     monkeypatch.setattr(
-        "wallpaperctl.theme.omarchy.motion_wallpaper_play", lambda *a, **k: True
+        "wallpaperctl.omarchy_watch.ensure_watch_running", lambda: None
     )
     monkeypatch.setattr(
-        "wallpaperctl.omarchy_watch.ensure_watch_running", lambda: None
+        "wallpaperctl.omarchy_watch.snapshot_monitor_transforms", lambda **k: []
+    )
+    monkeypatch.setattr(
+        "wallpaperctl.omarchy_watch.restore_monitor_transforms", lambda s: True
+    )
+    monkeypatch.setattr(
+        "wallpaperctl.omarchy_watch.suppress_layout_rebind", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
+        "wallpaperctl.theme.omarchy.have",
+        lambda cmd: False,
     )
     monkeypatch.setattr("time.sleep", lambda seconds: None)
 
@@ -311,7 +321,6 @@ def test_setter_animated_uses_motion_wallpaper(tmp_path):
     with (
         patch("wallpaperctl.set.omarchy.run_omarchy") as run_mock,
         patch("wallpaperctl.set.omarchy.motion_wallpaper_play", return_value=True) as play,
-        patch("wallpaperctl.set.omarchy.is_dynamic_theme_active", return_value=False),
     ):
         run_mock.return_value.returncode = 0
         assert OmarchySetter().set_wallpaper(ctx)
@@ -321,7 +330,8 @@ def test_setter_animated_uses_motion_wallpaper(tmp_path):
         assert run_mock.call_args[0][0][2] == "set"
 
 
-def test_setter_animated_defers_play_when_dynamic_theme(tmp_path):
+def test_setter_animated_plays_even_when_dynamic_theme(tmp_path):
+    """Video play is IPC, like andrath-terminal — not a theme-set hook."""
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"v")
     frame = tmp_path / "frame.jpg"
@@ -335,12 +345,12 @@ def test_setter_animated_defers_play_when_dynamic_theme(tmp_path):
 
     with (
         patch("wallpaperctl.set.omarchy.run_omarchy") as run_mock,
-        patch("wallpaperctl.set.omarchy.motion_wallpaper_play") as play,
-        patch("wallpaperctl.set.omarchy.is_dynamic_theme_active", return_value=True),
+        patch("wallpaperctl.set.omarchy.motion_wallpaper_play", return_value=True) as play,
     ):
         run_mock.return_value.returncode = 0
         assert OmarchySetter().set_wallpaper(ctx)
-        play.assert_not_called()
+        play.assert_called_once()
+        assert play.call_args[0][0] == video
         assert run_mock.call_args[0][0][:3] == ["theme", "bg", "set"]
 
 
@@ -358,7 +368,7 @@ def test_setter_animated_failure_falls_back(tmp_path):
 
     with patch("wallpaperctl.set.omarchy.run_omarchy") as run_mock, patch(
         "wallpaperctl.set.omarchy.motion_wallpaper_play", return_value=False
-    ), patch("wallpaperctl.set.omarchy.is_dynamic_theme_active", return_value=False):
+    ):
         run_mock.return_value.returncode = 0
         assert not OmarchySetter().set_wallpaper(ctx)
 
@@ -397,16 +407,8 @@ def test_op_run_writes_colors_and_refreshes(monkeypatch, tmp_path):
     wal.mkdir(parents=True)
     (wal / "colors.json").write_text(json.dumps(_palette()), encoding="utf-8")
 
-    runs: list[list[str]] = []
-
-    def fake_run_omarchy(args, **kwargs):
-        runs.append(args)
-        result = type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
-        return result
-
     with (
         patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
-        patch("wallpaperctl.theme.omarchy.run_omarchy", side_effect=fake_run_omarchy),
         patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
     ):
         op = OmarchyThemeOp()
@@ -416,30 +418,112 @@ def test_op_run_writes_colors_and_refreshes(monkeypatch, tmp_path):
     theme_dir = tmp_path / ".config" / "omarchy" / "themes" / THEME_SLUG
     assert (theme_dir / "colors.toml").is_file()
     assert (theme_dir / "backgrounds" / "w.jpg").is_file()
-    assert runs == [["theme", "refresh"]]
 
 
-def test_op_run_falls_back_to_theme_set(monkeypatch, tmp_path):
+def test_op_run_skips_compositor_reload_when_templates_work(monkeypatch, tmp_path):
     _fake_home(monkeypatch, tmp_path)
     _theme_state(tmp_path, THEME_SLUG)
+    runs: list[list[str]] = []
 
-    calls: list[tuple[list[str], dict | None]] = []
-
-    def fake_run_omarchy(args, *, timeout=30, env_extra=None):
-        calls.append((args, env_extra))
-        rc = 1 if args[:2] == ["theme", "refresh"] else 0
-        return type("R", (), {"returncode": rc, "stdout": "", "stderr": ""})()
+    def fake_run(args, **kwargs):
+        runs.append(list(args))
+        if list(args)[:1] == ["omarchy-theme-set-templates"]:
+            nxt = tmp_path / ".local" / "state" / "omarchy" / "current" / "next-theme"
+            nxt.mkdir(parents=True, exist_ok=True)
+            (nxt / "hyprland.lua").write_text("hl.config({})\n", encoding="utf-8")
+        return type("R", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
 
     with (
         patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
-        patch("wallpaperctl.theme.omarchy.run_omarchy", side_effect=fake_run_omarchy),
+        patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.theme.omarchy.have", return_value=True),
+        patch("wallpaperctl.theme.omarchy.run", side_effect=fake_run),
+    ):
+        assert OmarchyThemeOp().run(_ctx(tmp_path))
+    assert ["omarchy-theme-set-templates"] in runs
+    assert not any(c[:1] == ["hyprctl"] and c[1] == "eval" for c in runs)
+    assert ["omarchy-restart-hyprctl"] not in runs
+    assert ["omarchy-hook", "theme-set", THEME_SLUG] not in runs
+    assert ["omarchy-restart-terminal"] in runs
+
+
+def test_hypr_keywords_from_mapping():
+    mapping = {
+        "hyprland_active_border": "rgba(804c49ee) rgba(877485ee) 45deg",
+        "hyprland_inactive_border": "rgba(595959aa)",
+    }
+    pairs = dict(tom._hypr_keywords_from_mapping(mapping))
+    assert pairs["general:col.active_border"] == "rgba(804c49ee) rgba(877485ee) 45deg"
+    assert pairs["group:col.border_active"] == "rgba(804c49ee) rgba(877485ee) 45deg"
+    assert pairs["general:col.inactive_border"] == "rgba(595959aa)"
+    assert pairs["group:col.border_inactive"] == "rgba(595959aa)"
+
+
+def test_retint_updates_kitty_but_does_not_write_hyprland_lua(
+    monkeypatch, tmp_path
+):
+    """Writing hyprland.lua makes Hyprland auto-reload (monitors.lua / landscape)."""
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+    current = tmp_path / ".local" / "state" / "omarchy" / "current" / "theme"
+    current.mkdir(parents=True)
+    (current / "kitty.conf").write_text("foreground #oldold\n", encoding="utf-8")
+    (current / "hyprland.lua").write_text("-- keep\n", encoding="utf-8")
+    (current / "gum_env.lua").write_text("-- keep gum\n", encoding="utf-8")
+    (current / "alacritty.toml").write_text("# stale\n", encoding="utf-8")
+
+    theme_dir = tmp_path / ".config" / "omarchy" / "themes" / THEME_SLUG
+    theme_dir.mkdir(parents=True)
+    (theme_dir / "colors.toml").write_text('accent = "#ff0000"\n', encoding="utf-8")
+    (theme_dir / "backgrounds").mkdir()
+
+    mapping = {
+        "hyprland_active_border": "rgba(ff0000ee) rgba(ffaaaaee) 45deg",
+    }
+    runs: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        runs.append(list(args))
+        if list(args)[:1] == ["omarchy-theme-set-templates"]:
+            nxt = tmp_path / ".local" / "state" / "omarchy" / "current" / "next-theme"
+            nxt.mkdir(parents=True, exist_ok=True)
+            (nxt / "kitty.conf").write_text("foreground #newnew\n", encoding="utf-8")
+            (nxt / "hyprland.lua").write_text("-- generated lua must not land\n", encoding="utf-8")
+            (nxt / "gum_env.lua").write_text("-- generated gum must not land\n", encoding="utf-8")
+        return type("R", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
+
+    with (
+        patch("wallpaperctl.theme.omarchy.have", return_value=True),
+        patch("wallpaperctl.theme.omarchy.run", side_effect=fake_run),
+    ):
+        assert tom.retint_without_compositor_reload(
+            theme_dir, THEME_SLUG, mapping
+        )
+
+    assert (current / "kitty.conf").read_text(encoding="utf-8") == "foreground #newnew\n"
+    assert (current / "hyprland.lua").read_text(encoding="utf-8") == "-- keep\n"
+    assert (current / "gum_env.lua").read_text(encoding="utf-8") == "-- keep gum\n"
+    assert (current / "alacritty.toml").read_text(encoding="utf-8") == "# stale\n"
+    assert any(
+        c[:3] == ["hyprctl", "keyword", "general:col.active_border"] for c in runs
+    )
+    assert ["omarchy-restart-terminal"] in runs
+    assert ["omarchy-restart-hyprctl"] not in runs
+    assert not any(c[:1] == ["omarchy-hook"] for c in runs)
+
+
+def test_op_run_never_falls_back_to_theme_set(monkeypatch, tmp_path):
+    """Missing templates is a soft skip — not `omarchy theme set` (hypr reload)."""
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+
+    with (
+        patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
+        patch("wallpaperctl.omarchy.run_omarchy") as run_mock,
         patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
     ):
         assert OmarchyThemeOp().run(_ctx(tmp_path))
-
-    assert calls[0][0] == ["theme", "refresh"]
-    assert calls[1][0] == ["theme", "set", THEME_SLUG]
-    assert calls[1][1] == {"OMARCHY_THEME_SKIP_BACKGROUND": "1"}
+    run_mock.assert_not_called()
 
 
 def test_op_run_without_palette_fails(monkeypatch, tmp_path):
@@ -453,25 +537,16 @@ def test_op_run_skips_refresh_when_palette_unchanged(monkeypatch, tmp_path):
     _fake_home(monkeypatch, tmp_path)
     _theme_state(tmp_path, THEME_SLUG)
 
-    runs: list[list[str]] = []
-
-    def fake_run_omarchy(args, **kwargs):
-        runs.append(args)
-        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
-
     with (
         patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
-        patch("wallpaperctl.theme.omarchy.run_omarchy", side_effect=fake_run_omarchy),
+        patch("wallpaperctl.omarchy.run_omarchy") as run_mock,
         patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
     ):
         op = OmarchyThemeOp()
         ctx = _ctx(tmp_path)
-        # First run writes the palette and refreshes.
         assert op.run(ctx)
-        assert runs == [["theme", "refresh"]]
-        # Second run with the same palette: refresh skipped.
         assert op.run(ctx)
-        assert runs == [["theme", "refresh"]]
+        run_mock.assert_not_called()
 
 
 def test_op_run_refresh_disabled_stages_only(monkeypatch, tmp_path):
@@ -480,7 +555,7 @@ def test_op_run_refresh_disabled_stages_only(monkeypatch, tmp_path):
 
     with (
         patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
-        patch("wallpaperctl.theme.omarchy.run_omarchy") as run_mock,
+        patch("wallpaperctl.omarchy.run_omarchy") as run_mock,
         patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
     ):
         ctx = _ctx(tmp_path)
@@ -842,16 +917,11 @@ def test_setup_swaps_wallust_config(monkeypatch, tmp_path):
 
 
 def test_op_run_does_not_re_signal_opencode(monkeypatch, tmp_path):
-    # omarchy theme refresh already runs omarchy-restart-opencode (SIGUSR2).
-    # wallpaperctl must not send a second one — that double-flashes TUIs.
+    # Live retint must not SIGUSR2 opencode (that double-flashes TUIs).
     _fake_home(monkeypatch, tmp_path)
     _theme_state(tmp_path, THEME_SLUG)
 
     runs: list[list[str]] = []
-
-    def fake_run_omarchy(args, **kwargs):
-        runs.append(args)
-        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     def fake_run(args, **kwargs):
         runs.append(list(args))
@@ -859,15 +929,15 @@ def test_op_run_does_not_re_signal_opencode(monkeypatch, tmp_path):
 
     with (
         patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
-        patch("wallpaperctl.theme.omarchy.run_omarchy", side_effect=fake_run_omarchy),
         patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
-        patch("wallpaperctl.util.run", side_effect=fake_run),
+        patch("wallpaperctl.theme.omarchy.have", return_value=True),
+        patch("wallpaperctl.theme.omarchy.run", side_effect=fake_run),
     ):
         assert OmarchyThemeOp().run(_ctx(tmp_path))
 
-    assert runs == [["theme", "refresh"]]
     assert not any("pkill" in (c[0] if c else "") for c in runs)
     assert not any("opencode" in " ".join(c) for c in runs)
+    assert ["omarchy-restart-opencode"] not in runs
 
 
 def test_op_run_live_applies_shell_when_palette_changes(monkeypatch, tmp_path):
@@ -881,19 +951,18 @@ def test_op_run_live_applies_shell_when_palette_changes(monkeypatch, tmp_path):
 
     with (
         patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
-        patch("wallpaperctl.theme.omarchy.run_omarchy") as run_mock,
+        patch("wallpaperctl.omarchy.run_omarchy") as run_mock,
         patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
         patch("wallpaperctl.theme.omarchy.apply_shell_theme_live", side_effect=fake_live),
     ):
-        run_mock.return_value.returncode = 0
         op = OmarchyThemeOp()
         ctx = _ctx(tmp_path)
         assert op.run(ctx)
         assert live  # first write → live apply
         live.clear()
-        assert op.run(ctx)  # same palette → skip live apply and refresh
+        assert op.run(ctx)  # same palette → skip live apply
         assert live == []
-        assert run_mock.call_count == 1
+        run_mock.assert_not_called()
 
 
 # ── opencode system-theme signalling ────────────────────────────────────
@@ -908,12 +977,8 @@ def test_op_run_leaves_tui_json_untouched(monkeypatch, tmp_path):
     tui.parent.mkdir(parents=True)
     tui.write_text(json.dumps({"theme": "system"}), encoding="utf-8")
 
-    def fake_run_omarchy(args, **kwargs):
-        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
-
     with (
         patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
-        patch("wallpaperctl.theme.omarchy.run_omarchy", side_effect=fake_run_omarchy),
         patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
     ):
         assert OmarchyThemeOp().run(_ctx(tmp_path))
@@ -1098,7 +1163,8 @@ def test_motion_wallpaper_playing_reads_state(monkeypatch, tmp_path):
     assert not motion_wallpaper_playing()
 
 
-def test_op_run_plays_motion_when_refresh_skipped(monkeypatch, tmp_path):
+def test_op_run_does_not_play_motion(monkeypatch, tmp_path):
+    """Setter plays the clip; the theme op only retints from the ffmpeg frame."""
     _fake_home(monkeypatch, tmp_path)
     _theme_state(tmp_path, THEME_SLUG)
     video = tmp_path / "clip.mp4"
@@ -1111,21 +1177,12 @@ def test_op_run_plays_motion_when_refresh_skipped(monkeypatch, tmp_path):
         ops=OpsConfig(),
         static_path=frame,
     )
-    plays: list[Path] = []
-
-    def fake_play(path, **kwargs):
-        plays.append(path)
-        return True
-
     with (
         patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
-        patch("wallpaperctl.theme.omarchy.run_omarchy") as run_mock,
         patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
-        patch("wallpaperctl.theme.omarchy.motion_wallpaper_play", side_effect=fake_play),
+        patch("wallpaperctl.omarchy.motion_wallpaper_play") as play,
     ):
-        run_mock.return_value.returncode = 0
         op = OmarchyThemeOp()
-        assert op.run(ctx)  # first run refreshes → hook plays, we must not
-        assert plays == []
-        assert op.run(ctx)  # skip refresh → play here
-        assert plays == [video]
+        assert op.run(ctx)
+        assert op.run(ctx)
+        play.assert_not_called()

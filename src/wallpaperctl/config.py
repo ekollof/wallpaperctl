@@ -79,12 +79,10 @@ class OpsConfig:
     omarchy_theme_slug: str = "dynamic-wallpapers"
     omarchy_accent_strategy: str = "warmest"
     omarchy_timeout: int = 60
-    # Run `omarchy theme refresh` after palette changes (retints all apps).
-    # Turning this off only stages colors.toml; apps pick it up on the next
-    # manual `omarchy theme refresh` / theme re-selection.
+    # After wallust, retint Kitty + Hypr borders from the Dynamic Wallpapers
+    # colors.toml. Off: only stage colors.toml (no live app retint).
     omarchy_refresh_apps: bool = True
-    # Skip the refresh when the rendered palette is unchanged (e.g. -R reload);
-    # avoids needless terminal/WM churn that interrupts running TUI agents.
+    # Skip live retint when the rendered palette is unchanged (e.g. -R).
     omarchy_skip_unchanged: bool = True
     cde_restart_dtwm: bool = True
     enable_pywalfox: bool = True

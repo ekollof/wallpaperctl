@@ -62,9 +62,7 @@ def _timeout_for(op_name: str, ctx: WallpaperContext) -> float:
     if op_name == "openlinkhub":
         return float(ctx.ops.openlinkhub_timeout)
     if op_name == "omarchy":
-        # Inner `omarchy theme refresh` uses omarchy_timeout; give the runner
-        # a little slack so a finishing refresh is not reported as a timeout
-        # and then retried (which stacks terminal/WM reloads).
+        # Live retint (templates + kitty/hypr keyword) uses omarchy_timeout.
         return float(ctx.ops.omarchy_timeout) + 5.0
     return float(ctx.ops.operation_timeout)
 
@@ -101,8 +99,7 @@ def run_theme_ops(ctx: WallpaperContext) -> tuple[int, int]:
             continue
         total += 1
         timeout = _timeout_for(op.name, ctx)
-        # A full omarchy theme refresh already restarts terminals and hyprctl;
-        # retrying it on timeout stacks that churn. One attempt is enough.
+        # Omarchy retint is one-shot: retrying stacks Kitty SIGUSR1.
         attempts = 1 if op.name == "omarchy" else max_retries
         log.debug(
             "Executing theme operation: %s (timeout=%ss, max_attempts=%s)",
