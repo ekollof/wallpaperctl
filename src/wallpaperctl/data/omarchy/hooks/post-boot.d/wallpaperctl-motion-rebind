@@ -1,0 +1,10 @@
+#!/bin/bash
+# wallpaperctl: rebind Omarchy motion wallpaper after monitor layout changes
+# (screen rotate). Owned by wallpaperctl so it survives `omarchy plugin update`.
+#
+# The omarchy hook runner executes this with `bash "$hook"` and must return;
+# do not exec a long-running process here.
+
+command -v wallpaperctl >/dev/null 2>&1 || exit 0
+wallpaperctl omarchy-watch >/dev/null 2>&1 || true
+exit 0

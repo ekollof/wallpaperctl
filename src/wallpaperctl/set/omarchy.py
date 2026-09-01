@@ -32,6 +32,9 @@ class OmarchySetter:
         return ctx.de.omarchy
 
     def set_wallpaper(self, ctx: WallpaperContext) -> bool:
+        from wallpaperctl.omarchy_watch import ensure_watch_running
+
+        ensure_watch_running()
         if ctx.is_animated:
             return self._set_animated(ctx)
         return self._set_static(ctx)

@@ -47,6 +47,7 @@ def main(argv: list[str] | None = None) -> int:
         "setup",
         "migrate",
         "manage",
+        "omarchy-watch",
         "version",
         "help",
     }
@@ -465,6 +466,15 @@ def _subcommand_main(argv: list[str]) -> int:
         action="store_true",
         help="Only warm the preview cache, then exit (no TUI)",
     )
+    p_watch = sub.add_parser(
+        "omarchy-watch",
+        help="Rebind Omarchy motion wallpaper after monitor layout changes",
+    )
+    p_watch.add_argument(
+        "--foreground",
+        action="store_true",
+        help="Run in this process (default: start a background watcher)",
+    )
     p_setup = sub.add_parser(
         "setup",
         help="Check/install dependencies and bootstrap config / wallust",
@@ -603,6 +613,13 @@ def _subcommand_main(argv: list[str]) -> int:
         from wallpaperctl.maint.verify import run_verify
 
         return run_verify(args.target, ops=ops)
+    if args.cmd == "omarchy-watch":
+        from wallpaperctl.omarchy_watch import ensure_watch_running, watch_loop
+
+        if args.foreground:
+            return watch_loop()
+        ensure_watch_running()
+        return 0
     if args.cmd == "setup":
         from wallpaperctl.setup import run_setup
 
