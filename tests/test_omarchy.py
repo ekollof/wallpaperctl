@@ -775,7 +775,9 @@ def test_motion_plugin_missing_gets_installed(monkeypatch, tmp_path, capsys):
 
     with patch(
         "wallpaperctl.setup.omarchy_bootstrap.run_omarchy", side_effect=fake_run
-    ) as run_mock:
+    ) as run_mock, patch(
+        "wallpaperctl.setup.omarchy_bootstrap.qt_multimedia_present", return_value=True
+    ):
         from wallpaperctl.setup.omarchy_bootstrap import _ensure_motion_plugin
 
         assert _ensure_motion_plugin(yes=True)
@@ -817,6 +819,98 @@ def test_motion_plugin_mgmt_unavailable_is_soft(monkeypatch, tmp_path, capsys):
 
         assert not _ensure_motion_plugin(yes=True)
         assert "plugin management unavailable" in capsys.readouterr().out
+
+
+# ── qt multimedia (motion plugin dependency) ─────────────────────────────
+
+
+def test_qt_multimedia_present_skips_install():
+    from wallpaperctl.setup import omarchy_bootstrap as obm
+
+    with (
+        patch.object(obm, "qt_multimedia_present", return_value=True),
+        patch.object(obm, "detect_package_manager") as detect_mock,
+    ):
+        assert obm._ensure_qt_multimedia(yes=True)
+        detect_mock.assert_not_called()
+
+
+def test_qt_multimedia_missing_gets_installed(capsys):
+    from wallpaperctl.setup import omarchy_bootstrap as obm
+    from wallpaperctl.setup.packages import PackageManager
+
+    pm = PackageManager(
+        "pacman", "pacman", ["sudo", "pacman", "-S", "--needed", "--noconfirm"]
+    )
+    installed: list[tuple] = []
+
+    def fake_install(pairs, _pm, *, yes):
+        installed.extend(pairs)
+        return 0
+
+    with (
+        patch.object(obm, "qt_multimedia_present", side_effect=[False, True]),
+        patch.object(obm, "is_omarchy_shell_running", return_value=False),
+        patch.object(obm, "detect_package_manager", return_value=pm),
+        patch.object(obm, "install_system_packages", side_effect=fake_install),
+    ):
+        assert obm._ensure_qt_multimedia(yes=True)
+    dep, pkg = installed[0]
+    assert pkg == "qt6-multimedia"
+    assert dep.id == "qt6-multimedia"
+    assert "omarchy-restart-shell" not in capsys.readouterr().out
+
+
+def test_qt_multimedia_missing_no_pm_is_soft(capsys):
+    from wallpaperctl.setup import omarchy_bootstrap as obm
+
+    with (
+        patch.object(obm, "qt_multimedia_present", return_value=False),
+        patch.object(obm, "detect_package_manager", return_value=None),
+    ):
+        assert not obm._ensure_qt_multimedia(yes=True)
+    assert "qt6-multimedia" in capsys.readouterr().out
+
+
+def test_qt_multimedia_install_failure_is_soft(capsys):
+    from wallpaperctl.setup import omarchy_bootstrap as obm
+    from wallpaperctl.setup.packages import PackageManager
+
+    pm = PackageManager("pacman", "pacman", ["sudo", "pacman", "-S"])
+
+    with (
+        patch.object(obm, "qt_multimedia_present", return_value=False),
+        patch.object(obm, "detect_package_manager", return_value=pm),
+        patch.object(obm, "install_system_packages", return_value=1),
+    ):
+        assert not obm._ensure_qt_multimedia(yes=True)
+    out = capsys.readouterr().out
+    assert "mpvpaper" in out and "omarchy-restart-shell" in out
+
+
+def test_qt_multimedia_present_qmake_root(tmp_path):
+    from wallpaperctl.setup import omarchy_bootstrap as obm
+
+    qml_root = tmp_path / "qml"
+    (qml_root / "QtMultimedia").mkdir(parents=True)
+
+    class R:
+        returncode = 0
+        stdout = f"{qml_root}\n"
+        stderr = ""
+
+    with (
+        patch.object(obm, "have", side_effect=lambda c: c == "qmake6"),
+        patch.object(obm, "run", return_value=R()),
+    ):
+        assert obm.qt_multimedia_present()
+
+    # and absent when neither qmake6 nor fallback roots have the module
+    with (
+        patch.object(obm, "have", return_value=False),
+        patch.object(obm, "_QML_FALLBACK_ROOTS", (str(tmp_path / "empty"),)),
+    ):
+        assert not obm.qt_multimedia_present()
 
 
 # ── wallust / omarchy theming hand-off ───────────────────────────────────
@@ -906,6 +1000,10 @@ def test_setup_swaps_wallust_config(monkeypatch, tmp_path):
         ),
         patch("wallpaperctl.setup.omarchy_bootstrap.have", return_value=True),
         patch("wallpaperctl.setup.omarchy_bootstrap.bootstrap_wallust", return_value=0),
+        patch(
+            "wallpaperctl.setup.omarchy_bootstrap.qt_multimedia_present",
+            return_value=True,
+        ),
         patch("wallpaperctl.setup.omarchy_bootstrap.run_omarchy") as run_mock,
     ):
         run_mock.return_value.returncode = 0

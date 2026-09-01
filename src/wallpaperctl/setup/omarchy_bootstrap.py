@@ -16,17 +16,83 @@ from wallpaperctl.omarchy import (
     user_theme_dir,
 )
 from wallpaperctl.setup.bootstrap import bootstrap_config
-from wallpaperctl.setup.deps import DEPS
+from wallpaperctl.setup.deps import DEPS, Dep, Kind
 from wallpaperctl.setup.packages import (
     detect_package_manager,
     install_system_packages,
 )
 from wallpaperctl.setup.wallust_bootstrap import bootstrap_wallust, wallust_status
 from wallpaperctl.theme.omarchy import ensure_theme_skeleton
-from wallpaperctl.util import have, home
+from wallpaperctl.util import have, home, run
 
 MOTION_PLUGIN_REPO = "https://github.com/28allday/Motion-Wallpaper-Omarchy.git"
 MOTION_PLUGIN_FRAGMENT = "motion-wallpaper"
+
+# The motion-wallpaper shell plugin renders video through QML MediaPlayer
+# (QtMultimedia). Without that module the plugin silently fails to load
+# ("module QtMultimedia is not installed") and animated wallpapers fall back
+# to mpvpaper — the failure only shows up in the shell log.
+QT_MULTIMEDIA_DEP = Dep(
+    "qt6-multimedia",
+    "Qt Multimedia QML module (required by the Motion Wallpaper shell plugin)",
+    Kind.ANIMATED,
+    "qml:QtMultimedia",  # no binary; presence checked via qt_multimedia_present()
+    pacman="qt6-multimedia",
+    apt="qml6-module-qtmultimedia",
+    dnf="qt6-qtmultimedia",
+    freebsd_pkg="qt6-multimedia",
+    notes="Needed by the nosignal.motion-wallpaper omarchy-shell plugin",
+)
+
+# QML module roots when qmake6 is unavailable (covers common distro layouts).
+_QML_FALLBACK_ROOTS = (
+    "/usr/lib/qt6/qml",
+    "/usr/lib64/qt6/qml",
+    "/usr/local/lib/qt6/qml",
+    "/usr/lib/x86_64-linux-gnu/qt6/qml",
+    "/usr/lib/aarch64-linux-gnu/qt6/qml",
+)
+
+
+def qt_multimedia_present() -> bool:
+    """True when the QtMultimedia QML module is importable by the shell."""
+    rel = Path("QtMultimedia")
+    if have("qmake6"):
+        try:
+            r = run(["qmake6", "-query", "QT_INSTALL_QML"], timeout=5)
+        except OSError:
+            r = None
+        if r is not None and r.returncode == 0 and (r.stdout or "").strip():
+            if (Path(r.stdout.strip()) / rel).is_dir():
+                return True
+    return any((Path(root) / rel).is_dir() for root in _QML_FALLBACK_ROOTS)
+
+
+def _ensure_qt_multimedia(*, yes: bool) -> bool:
+    """Make sure the Qt Multimedia QML module is installed (soft-fail)."""
+    if qt_multimedia_present():
+        return True
+    pm = detect_package_manager()
+    if not pm:
+        print("Note: Qt Multimedia module not found and no package manager detected.")
+        print("  The Motion Wallpaper plugin cannot load without it (Arch:")
+        print("  sudo pacman -S qt6-multimedia).")
+        return False
+    pkg = QT_MULTIMEDIA_DEP.package_for(pm.id)
+    if not pkg:
+        print(f"Note: Qt Multimedia package name unknown for {pm.name}; install")
+        print("  it manually (Arch: sudo pacman -S qt6-multimedia).")
+        return False
+    print("The Motion Wallpaper plugin needs the Qt Multimedia QML module.")
+    rc = install_system_packages([(QT_MULTIMEDIA_DEP, pkg)], pm, yes=yes)
+    if rc == 0 and qt_multimedia_present():
+        print("✓ Qt Multimedia module installed.")
+        if is_omarchy_shell_running():
+            print("  Run: omarchy-restart-shell  (shell must reload to load it)")
+        return True
+    print("Warning: Qt Multimedia install failed; animated wallpapers fall back")
+    print("  to mpvpaper. After installing it manually, run: omarchy-restart-shell")
+    return False
 
 
 def _ask(prompt: str, *, yes: bool) -> bool:
@@ -77,11 +143,13 @@ def _ensure_motion_plugin(*, yes: bool) -> bool:
         print("  Motion Wallpaper plugin (animated wallpapers fall back to mpvpaper).")
         return False
     if motion["installed"] and motion["enabled"]:
+        _ensure_qt_multimedia(yes=yes)
         print(f"Motion Wallpaper plugin: enabled ({motion['id']})")
         return True
     if motion["installed"]:
         print(f"Motion Wallpaper plugin installed but disabled ({motion['id']}).")
         if _ask("Enable it now?", yes=yes):
+            _ensure_qt_multimedia(yes=yes)
             r = run_omarchy(["plugin", "enable", str(motion["id"])], timeout=30)
             if r.returncode == 0:
                 print("✓ Motion Wallpaper plugin enabled.")
@@ -97,6 +165,7 @@ def _ensure_motion_plugin(*, yes: bool) -> bool:
             args.append("--yes")
         r = run_omarchy(args, timeout=120)
         if r.returncode == 0:
+            _ensure_qt_multimedia(yes=yes)
             print("✓ Motion Wallpaper plugin installed and enabled.")
             return True
         print("Warning: plugin install failed; animated wallpapers fall back to mpvpaper.")
@@ -117,6 +186,7 @@ def omarchy_status() -> dict:
         "theme_dir": str(theme_dir),
         "theme_installed": (theme_dir / "colors.toml").is_file(),
         "motion_plugin": motion_plugin_status(),
+        "qt_multimedia": qt_multimedia_present(),
         "wallust": wallust_status(),
     }
 

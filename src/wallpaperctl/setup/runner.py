@@ -201,6 +201,13 @@ def cmd_check(
     elif motion.get("installed"):
         state = "enabled" if motion.get("enabled") else "installed but DISABLED"
         print(f"  motion plugin: {state} ({motion.get('id')})")
+        if not ost.get("qt_multimedia", True):
+            print(
+                "  qt-multimedia: MISSING — plugin cannot load"
+                " (fix: wallpaperctl setup omarchy)"
+            )
+        else:
+            print("  qt-multimedia: present")
     else:
         print("  motion plugin: NO — animated wallpapers fall back to mpvpaper")
     print()
