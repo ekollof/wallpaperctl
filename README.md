@@ -250,9 +250,15 @@ While that theme is active, every wallpaper change:
 
 1. sets the background via `omarchy theme bg set` (or omarchy's motion-wallpaper for videos),
 2. runs wallust on the image,
-3. rewrites the theme's `colors.toml` from the palette,
-4. runs `omarchy theme refresh` so all Omarchy-managed apps (terminal, bar, btop,
+3. rewrites the theme's `colors.toml` from the palette and live-applies it to
+   omarchy-shell (bar/chrome) immediately,
+4. runs `omarchy theme refresh` so all Omarchy-managed apps (terminal, btop,
    browser, editor, keyboard RGB, …) retint from templates.
+
+`omarchy theme refresh` already reloads terminals and OpenCode; wallpaperctl
+does not send a second SIGUSR2. GTK / nwg-look / dunst-or-mako ops are skipped
+on Omarchy so they cannot fight `omarchy-theme-set-gnome` or the shell
+notifier. Unchanged palettes skip the refresh entirely.
 
 Switch to any other Omarchy theme and wallpaperctl only swaps backgrounds
 (no color changes); switching back resumes full dynamic behavior. No new

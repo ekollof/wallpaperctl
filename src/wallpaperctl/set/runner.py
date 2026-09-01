@@ -33,7 +33,9 @@ SETTERS = [
 
 def run_wallpaper_setters(ctx: WallpaperContext) -> tuple[int, int]:
     """Returns (succeeded, attempted)."""
-    if not ctx.is_animated:
+    if not ctx.is_animated and not ctx.de.omarchy:
+        # Omarchy never uses mpvpaper; hunting leftover xwinwrap/mpv pids on
+        # every static set is wasted work (and can SIGTERM unrelated players).
         AnimatedSetter.stop_active()
     succeeded = 0
     attempted = 0

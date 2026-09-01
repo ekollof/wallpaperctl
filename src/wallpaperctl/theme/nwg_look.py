@@ -12,7 +12,7 @@ class NwgLookOp:
 
     def enabled(self, ctx: WallpaperContext) -> bool:
         return ctx.ops.enable_nwg_look and not (
-            ctx.de.plasma or ctx.de.xfce or ctx.de.cinnamon
+            ctx.de.plasma or ctx.de.xfce or ctx.de.cinnamon or ctx.de.omarchy
         )
 
     def run(self, ctx: WallpaperContext) -> bool:

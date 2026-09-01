@@ -150,14 +150,11 @@ def is_cosmic_running() -> bool:
 
 
 def is_omarchy_running() -> bool:
-    """Omarchy session (omarchy-shell UI or omarchy user config + tooling)."""
-    from wallpaperctl.omarchy import is_omarchy_shell_running, omarchy_available
+    """Omarchy session (running shell, or CLI + a staged current theme)."""
+    from wallpaperctl.omarchy import is_omarchy_session
 
-    if is_omarchy_shell_running():
-        log.debug("Omarchy detected (omarchy-shell is running)")
-        return True
-    if omarchy_available():
-        log.debug("Omarchy detected (omarchy tooling/config present)")
+    if is_omarchy_session():
+        log.debug("Omarchy detected")
         return True
     return False
 

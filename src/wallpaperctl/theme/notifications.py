@@ -34,6 +34,10 @@ class NotificationsOp:
             return False
         if ctx.de.awesome:
             return False
+        # omarchy-shell is the session notifier; reloading mako/dunst (and
+        # worse, waybar) fights it.
+        if ctx.de.omarchy:
+            return False
         return True
 
     def run(self, ctx: WallpaperContext) -> bool:

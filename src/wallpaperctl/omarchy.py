@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
 import os
 import subprocess
@@ -46,6 +48,18 @@ def omarchy_config_dir() -> Path:
 def omarchy_available() -> bool:
     """True when the omarchy tooling or its user config is present."""
     return have("omarchy") or omarchy_config_dir().is_dir()
+
+
+def is_omarchy_session() -> bool:
+    """True when this looks like a live Omarchy desktop session.
+
+    A leftover ``~/.config/omarchy`` directory is not enough — that would
+    steal the wallpaper setter from hyprpaper on a non-Omarchy Hyprland
+    session. Require the shell, or the CLI plus a staged current theme.
+    """
+    if is_omarchy_shell_running():
+        return True
+    return have("omarchy") and theme_name_file().is_file()
 
 
 def is_omarchy_shell_running() -> bool:
@@ -115,3 +129,50 @@ def motion_wallpaper_play(video: Path, *, timeout: float = 5) -> bool:
 
 def motion_wallpaper_stop(*, timeout: float = 5) -> bool:
     return shell_ipc(["motion-wallpaper", "stop"], timeout=timeout)
+
+
+def motion_state_file() -> Path:
+    return home() / ".local" / "state" / "motion-wallpaper" / "state.json"
+
+
+def motion_wallpaper_playing() -> bool:
+    """Best-effort read of the motion-wallpaper plugin's persisted state."""
+    path = motion_state_file()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    enabled = data.get("enabled")
+    return enabled is True or str(enabled).lower() == "true"
+
+
+def apply_shell_theme_live(
+    colors_file: Path,
+    shell_file: Path | None = None,
+    *,
+    timeout: float = 3,
+) -> bool:
+    """Push a new palette to the running omarchy-shell without a full refresh.
+
+    ``omarchy theme refresh`` still has to retint terminals and apps; this
+    only makes the bar/background chrome pick up colors.toml immediately so
+    the desktop does not sit on the old palette while that work runs.
+    """
+    if not colors_file.is_file():
+        return False
+    try:
+        colors_b64 = base64.b64encode(colors_file.read_bytes()).decode("ascii")
+    except OSError:
+        return False
+    shell_b64 = ""
+    candidate = shell_file
+    if candidate is None or not candidate.is_file():
+        candidate = state_dir() / "theme" / "shell.toml"
+    if candidate.is_file():
+        try:
+            shell_b64 = base64.b64encode(candidate.read_bytes()).decode("ascii")
+        except OSError:
+            shell_b64 = ""
+    return shell_ipc(["shell", "applyTheme", colors_b64, shell_b64], timeout=timeout)

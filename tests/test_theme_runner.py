@@ -94,3 +94,22 @@ def test_runner_times_out_slow_op(tmp_path: Path) -> None:
 
 def test_enable_starttree_removed() -> None:
     assert not hasattr(OpsConfig(), "enable_starttree")
+
+
+def test_omarchy_timeout_uses_ops_budget(tmp_path: Path) -> None:
+    ctx = _ctx(tmp_path, omarchy_timeout=90, operation_timeout=30)
+    assert theme_runner._timeout_for("omarchy", ctx) == 95.0
+    assert theme_runner._timeout_for("gtk-theme", ctx) == 30.0
+
+
+def test_omarchy_op_is_not_retried(tmp_path: Path) -> None:
+    op = _FakeOp("omarchy", results=[False, True])
+    ctx = _ctx(tmp_path, max_retries=3, retry_delay=0.0, omarchy_timeout=5)
+    with (
+        patch.object(theme_runner, "THEME_OPS", [op]),
+        patch.object(theme_runner.time, "sleep", lambda s: None),
+    ):
+        failed, total = theme_runner.run_theme_ops(ctx)
+    assert total == 1
+    assert failed == 1
+    assert op.calls == 1

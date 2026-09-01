@@ -63,7 +63,7 @@ wallpaper_dir = "~/Wallpapers"
 # Omarchy dynamic theme (see theme/omarchy.py)
 # omarchy_theme_slug = "dynamic-wallpapers"   # displayed as "Dynamic Wallpapers"
 # omarchy_accent_strategy = "warmest"         # palette strategy for colors.toml accent
-# omarchy_timeout = 60                        # omarchy theme refresh budget (seconds)
+# omarchy_timeout = 60                        # omarchy theme refresh budget (seconds; runner adds slack)
 # omarchy_refresh_apps = true                 # false = stage colors.toml only, no app retint
 # omarchy_skip_unchanged = true               # skip refresh when palette is unchanged
 

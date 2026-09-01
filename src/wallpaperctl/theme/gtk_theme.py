@@ -23,6 +23,10 @@ class GtkThemeOp:
     name = "gtk-theme"
 
     def enabled(self, ctx: WallpaperContext) -> bool:
+        # Omarchy owns gsettings (omarchy-theme-set-gnome → Adwaita). Applying
+        # FlatColor here after the theme refresh fights that and flashes GTK.
+        if ctx.de.omarchy:
+            return False
         return ctx.ops.enable_gtk_theme
 
     def run(self, ctx: WallpaperContext) -> bool:

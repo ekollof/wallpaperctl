@@ -21,7 +21,9 @@ from wallpaperctl.context import WallpaperContext
 from wallpaperctl.omarchy import (
     MOTION_VIDEO_EXTENSIONS,
     THEME_SLUG,
+    apply_shell_theme_live,
     is_dynamic_theme_active,
+    motion_wallpaper_play,
     omarchy_available,
     run_omarchy,
     user_theme_dir,
@@ -29,7 +31,7 @@ from wallpaperctl.omarchy import (
 from wallpaperctl.theme.base import debug_op
 from wallpaperctl.theme.cosmic import pick_accent
 from wallpaperctl.theme.pywalfox import load_colors_json
-from wallpaperctl.util import have, hex_to_rgb, home, run
+from wallpaperctl.util import hex_to_rgb, home
 
 log = logging.getLogger("wallpaperctl")
 
@@ -357,6 +359,14 @@ class OmarchyThemeOp:
 
         self._heal_opencode(ctx)
 
+        palette_changed = previous is None or previous != rendered
+        if palette_changed:
+            # Bar/chrome pick up the new palette now; the full refresh below
+            # still retints terminals and apps (and is the slow/disruptive bit).
+            if apply_shell_theme_live(colors_file, theme_dir / "shell.toml"):
+                debug_op(self.name, "omarchy-shell palette applied live", ctx)
+
+        refreshed = False
         if not getattr(ctx.ops, "omarchy_refresh_apps", True):
             debug_op(
                 self.name,
@@ -364,63 +374,49 @@ class OmarchyThemeOp:
                 "(applied on next theme set/refresh)",
                 ctx,
             )
-            return True
-
-        # Palette unchanged (e.g. -R reload of the same wallpaper): skip the
-        # app-retint churn — it restarts terminals/WM config and interrupts
-        # running TUI agents (known Omarchy upstream annoyance).
-        if (
+        elif (
             getattr(ctx.ops, "omarchy_skip_unchanged", True)
-            and previous is not None
-            and previous == rendered
+            and not palette_changed
         ):
+            # Palette unchanged (e.g. -R reload of the same wallpaper): skip
+            # the app-retint churn — it restarts terminals/WM config and
+            # interrupts running TUI agents (known Omarchy upstream annoyance).
             debug_op(self.name, "palette unchanged; skipping theme refresh", ctx)
-            return True
-
-        timeout = float(getattr(ctx.ops, "omarchy_timeout", 60))
-        r = run_omarchy(["theme", "refresh"], timeout=timeout)
-        if r.returncode != 0:
-            debug_op(
-                self.name,
-                f"omarchy theme refresh failed (rc={r.returncode}), trying theme set",
-                ctx,
-            )
-            r = run_omarchy(
-                ["theme", "set", slug],
-                timeout=timeout,
-                env_extra={"OMARCHY_THEME_SKIP_BACKGROUND": "1"},
-            )
-        if r.returncode != 0:
-            debug_op(
-                self.name,
-                f"omarchy theme set failed: {(r.stderr or r.stdout or '')[:200]}",
-                ctx,
-            )
-            return False
-
-        # OpenCode runs the terminal-adaptive "system" theme (stock omarchy):
-        # it resolves from the terminal palette, which omarchy just reloaded.
-        # SIGUSR2 makes running sessions re-resolve it against the new colors.
-        self._signal_opencode(ctx)
-        debug_op(self.name, "theme refreshed via omarchy", ctx)
-        return True
-
-    def _signal_opencode(self, ctx: WallpaperContext) -> None:
-        if have("omarchy-restart-opencode"):
-            r = run(["omarchy-restart-opencode"], timeout=10)
-        elif have("pkill"):
-            r = run(["pkill", "-USR2", "-x", "opencode"], timeout=5)
         else:
-            debug_op(self.name, "no pkill/omarchy-restart-opencode; skipping signal", ctx)
-            return
-        debug_op(self.name, f"SIGUSR2 → opencode (rc={r.returncode})", ctx)
+            timeout = float(getattr(ctx.ops, "omarchy_timeout", 60))
+            r = run_omarchy(["theme", "refresh"], timeout=timeout)
+            if r.returncode != 0:
+                debug_op(
+                    self.name,
+                    f"omarchy theme refresh failed (rc={r.returncode}), trying theme set",
+                    ctx,
+                )
+                r = run_omarchy(
+                    ["theme", "set", slug],
+                    timeout=timeout,
+                    env_extra={"OMARCHY_THEME_SKIP_BACKGROUND": "1"},
+                )
+            if r.returncode != 0:
+                debug_op(
+                    self.name,
+                    f"omarchy theme set failed: {(r.stderr or r.stdout or '')[:200]}",
+                    ctx,
+                )
+            else:
+                refreshed = True
+                debug_op(self.name, "theme refreshed via omarchy", ctx)
 
-        # omarchy theme refresh rewrites ~/.config/opencode/themes/omarchy.json
-        # and reloads the terminals (omarchy-restart-terminal). OpenCode uses
-        # the terminal-adaptive "system" theme (stock omarchy default), so it
-        # follows the terminal palette automatically — no file watching, no
-        # registry churn, no signals needed here.
-        debug_op(self.name, "theme refreshed via omarchy", ctx)
+        # Setter defers motion-wallpaper play when this op will run, because
+        # `omarchy theme refresh` already starts it via the theme-set hook.
+        # If we skipped or failed the refresh, start playback here.
+        if ctx.is_animated and not refreshed:
+            video = ctx.path
+            if video.is_file() and not motion_wallpaper_play(video, timeout=10):
+                debug_op(self.name, f"motion-wallpaper play failed: {video.name}", ctx)
+                return False
+
+        if getattr(ctx.ops, "omarchy_refresh_apps", True) and palette_changed:
+            return refreshed
         return True
 
 
