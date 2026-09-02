@@ -41,6 +41,9 @@ gtk_theme_plasma = "Breeze"
 gtk_theme_xfce = "FlatColor-dark"
 gtk_theme_cinnamon = "Mint-Y"
 gtk_theme_standalone = "FlatColor-dark"
+# Standalone WM GTK: tint stock Adwaita via user gtk.css (Omarchy-style), no
+# vendored FlatColor needed. Set false to fall back to gtk_theme_standalone.
+gtk_adwaita_tint = true
 dynamic_icon_theme_name = "wallust-dynamic-icons"
 rgb_color_strategy = "warmest"
 openrgb_color_line_plasma = 3

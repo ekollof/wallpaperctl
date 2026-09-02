@@ -109,6 +109,9 @@ class OpsConfig:
     gtk_theme_xfce: str = "FlatColor-dark"
     gtk_theme_cinnamon: str = "Mint-Y"
     gtk_theme_standalone: str = "FlatColor-dark"
+    # Standalone WM GTK: tint stock Adwaita via user gtk.css (Omarchy-style)
+    # instead of recoloring the vendored FlatColor theme. See theme/adwaita.py.
+    gtk_adwaita_tint: bool = True
     dynamic_icon_theme_name: str = "wallust-dynamic-icons"
 
     rgb_color_strategy: str = "warmest"

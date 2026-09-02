@@ -7,7 +7,9 @@ import time
 from pathlib import Path
 
 from wallpaperctl.context import WallpaperContext
+from wallpaperctl.theme.adwaita import build_adwaita_css, write_adwaita_css
 from wallpaperctl.theme.base import debug_op
+from wallpaperctl.theme.pywalfox import load_colors_json
 from wallpaperctl.util import (
     have,
     home,
@@ -60,6 +62,8 @@ class GtkThemeOp:
                     self._gset("org.cinnamon.desktop.interface", "gtk-theme", t)
                     self._gset("org.gnome.desktop.interface", "gtk-theme", t)
         else:
+            if ctx.ops.gtk_adwaita_tint:
+                return self._adwaita_tint(ctx)
             current = self._gget("org.gnome.desktop.interface", "gtk-theme")
             if current.endswith("-dark"):
                 target = current
@@ -68,6 +72,28 @@ class GtkThemeOp:
             self._gset("org.gnome.desktop.interface", "gtk-theme", target)
             self._gset("org.gnome.desktop.interface", "color-scheme", "prefer-dark")
 
+        return self._reload_gtk(ctx)
+
+    def _adwaita_tint(self, ctx: WallpaperContext) -> bool:
+        """Omarchy-style tint: stock Adwaita + palette gtk.css overrides.
+
+        No vendored theme required — libadwaita/GTK3 read the user gtk.css
+        after the theme stylesheet, so named-color overrides tint every app.
+        """
+        colors = load_colors_json()
+        if not colors:
+            debug_op(self.name, "no wal colors.json; skipping adwaita tint", ctx)
+            return True
+        gtk4_css, gtk3_css = build_adwaita_css(
+            colors, accent_strategy=ctx.ops.rgb_color_strategy
+        )
+        written = write_adwaita_css(gtk4_css, gtk3_css)
+        self._gset("org.gnome.desktop.interface", "gtk-theme", "Adwaita-dark")
+        debug_op(
+            self.name,
+            f"adwaita tint written: {', '.join(str(p) for p in written) or 'none'}",
+            ctx,
+        )
         return self._reload_gtk(ctx)
 
     def _xfce(self, ctx: WallpaperContext) -> bool:
@@ -119,13 +145,20 @@ class GtkThemeOp:
 
     def _reload_gtk(self, ctx: WallpaperContext) -> bool:
         current = self._gget("org.gnome.desktop.interface", "gtk-theme") or "Default"
+        scheme = self._gget("org.gnome.desktop.interface", "color-scheme")
+        if scheme == "prefer-dark":
+            # Writing the same value again emits nothing. Chromium/Brave only
+            # re-read the theme on a real portal SettingChanged, so force two
+            # genuine transitions, ending on prefer-dark.
+            self._gset("org.gnome.desktop.interface", "color-scheme", "default")
+            time.sleep(0.05)
         self._gset("org.gnome.desktop.interface", "color-scheme", "prefer-dark")
         self._ensure_settings_ini(current)
         self._ensure_gtk_theme_env(ctx)
         self._reload_kde_gtkconfig()
         self._ensure_portal()
         self._emit_portal_signal()
-        self._update_xsettingsd(current)
+        self._update_xsettingsd(current, ctx)
 
         self._gset("org.gnome.desktop.interface", "gtk-theme", "")
         self._gset("org.gnome.desktop.interface", "gtk-theme", current)
@@ -189,25 +222,39 @@ class GtkThemeOp:
         base = current.split(":")[0]
         variant = current.split(":")[1] if ":" in current else ""
 
+        # GTK_THEME env overrides every GTK app and survives for the lifetime
+        # of long-running clients, so a stale pin here silently breaks dark
+        # mode (Chromium falls back to *light* Adwaita for missing themes).
+        replacement = ""
         if not ctx.de.cinnamon and re.search(r"^cinnamon", base, re.I):
-            if ctx.de.plasma:
+            replacement = "Breeze-Dark" if ctx.de.plasma else ctx.ops.gtk_theme_standalone
+        elif ctx.de.plasma:
+            if base != "Breeze-Dark" or not self._theme_exists(base):
                 replacement = "Breeze-Dark"
-            else:
+        elif ctx.ops.gtk_adwaita_tint:
+            # The tint owns the GTK look via user gtk.css; never pin a
+            # legacy theme over it.
+            if base != "Adwaita-dark":
+                replacement = "Adwaita-dark"
+        elif is_dark_theme_name(base):
+            if not self._theme_exists(base):
                 replacement = ctx.ops.gtk_theme_standalone
-            if variant and not is_dark_theme_name(replacement):
-                replacement = f"{replacement}:{variant}"
-            new = re.sub(r"^GTK_THEME=.*$", f"GTK_THEME={replacement}", text, flags=re.M)
-            env_file.write_text(new, encoding="utf-8")
-            return
+                if not self._theme_exists(replacement):
+                    replacement = (
+                        "Adwaita-dark" if self._theme_exists("Adwaita-dark") else ""
+                    )
+        else:
+            replacement = self._dark_variant(base)
 
-        if is_dark_theme_name(base):
+        if not replacement:
             return
-        dark = self._dark_variant(base)
-        if dark:
-            if variant and not is_dark_theme_name(dark):
-                dark = f"{dark}:{variant}"
-            new = re.sub(r"^GTK_THEME=.*$", f"GTK_THEME={dark}", text, flags=re.M)
+        if variant and not is_dark_theme_name(replacement):
+            replacement = f"{replacement}:{variant}"
+        new = re.sub(r"^GTK_THEME=.*$", f"GTK_THEME={replacement}", text, flags=re.M)
+        try:
             env_file.write_text(new, encoding="utf-8")
+        except OSError:
+            pass
 
     def _reload_kde_gtkconfig(self) -> None:
         from wallpaperctl.dbus_session import call as dbus_call
@@ -277,13 +324,19 @@ class GtkThemeOp:
             ),
         )
 
-    def _update_xsettingsd(self, theme: str) -> None:
+    def _update_xsettingsd(self, theme: str, ctx: WallpaperContext) -> None:
         """Update standalone xsettingsd config (Hyprland / tiling WM path only).
 
         Never start xsettingsd when xfsettingsd (XFCE) is present — they both
         try to own the XSETTINGS selection and Appearance will look broken.
+        Under Plasma, kded's gtkconfig module owns the GTK↔Plasma sync
+        (gsettings + settings.ini); spawning our own XSettings daemon there
+        would fight it and go stale between wallpaperctl runs.
         """
         if pgrep_exact("xfsettingsd"):
+            return
+        if ctx.de.plasma:
+            debug_op(self.name, "plasma owns xsettings sync; leaving xsettingsd alone", ctx)
             return
         conf = home() / ".config" / "xsettingsd" / "xsettingsd.conf"
         if not conf.is_file():
