@@ -122,6 +122,7 @@ def test_apply_shell_theme_live_encodes_payload(tmp_path):
     import base64
 
     assert base64.b64decode(captured[0][2]).decode() == 'accent = "#ff0000"\n'
+    assert captured[0][3] == ""
 
 
 # ── palette mapping ──────────────────────────────────────────────────────
@@ -963,6 +964,44 @@ def test_op_run_live_applies_shell_when_palette_changes(monkeypatch, tmp_path):
         assert op.run(ctx)  # same palette → skip live apply
         assert live == []
         run_mock.assert_not_called()
+
+
+def test_op_run_applies_generated_shell_toml_not_previous(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+    current = tmp_path / ".local" / "state" / "omarchy" / "current" / "theme"
+    current.mkdir(parents=True)
+    (current / "shell.toml").write_text(
+        '[bar]\nbackground = "#oldold"\n', encoding="utf-8"
+    )
+    live: list[tuple[Path, Path | None]] = []
+
+    def fake_live(colors_file, shell_file=None, **kwargs):
+        live.append((colors_file, shell_file))
+        return True
+
+    def fake_run(args, **kwargs):
+        if list(args)[:1] == ["omarchy-theme-set-templates"]:
+            nxt = tmp_path / ".local" / "state" / "omarchy" / "current" / "next-theme"
+            nxt.mkdir(parents=True, exist_ok=True)
+            (nxt / "shell.toml").write_text(
+                '[bar]\nbackground = "#newnew"\n', encoding="utf-8"
+            )
+        return type("R", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
+
+    with (
+        patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
+        patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.theme.omarchy.have", return_value=True),
+        patch("wallpaperctl.theme.omarchy.run", side_effect=fake_run),
+        patch("wallpaperctl.theme.omarchy.apply_shell_theme_live", side_effect=fake_live),
+    ):
+        assert OmarchyThemeOp().run(_ctx(tmp_path))
+
+    assert live
+    _colors, shell = live[0]
+    assert shell is not None
+    assert shell.read_text(encoding="utf-8") == '[bar]\nbackground = "#newnew"\n'
 
 
 # ── opencode system-theme signalling ────────────────────────────────────

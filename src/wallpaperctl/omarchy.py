@@ -166,12 +166,9 @@ def apply_shell_theme_live(
     except OSError:
         return False
     shell_b64 = ""
-    candidate = shell_file
-    if candidate is None or not candidate.is_file():
-        candidate = state_dir() / "theme" / "shell.toml"
-    if candidate.is_file():
+    if shell_file is not None and shell_file.is_file():
         try:
-            shell_b64 = base64.b64encode(candidate.read_bytes()).decode("ascii")
+            shell_b64 = base64.b64encode(shell_file.read_bytes()).decode("ascii")
         except OSError:
             shell_b64 = ""
     return shell_ipc(["shell", "applyTheme", colors_b64, shell_b64], timeout=timeout)

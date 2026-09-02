@@ -478,9 +478,6 @@ class OmarchyThemeOp:
         self._heal_opencode(ctx)
 
         palette_changed = previous is None or previous != rendered
-        if palette_changed:
-            if apply_shell_theme_live(colors_file, theme_dir / "shell.toml"):
-                debug_op(self.name, "omarchy-shell palette applied live", ctx)
 
         if not getattr(ctx.ops, "omarchy_refresh_apps", True):
             debug_op(
@@ -513,6 +510,15 @@ class OmarchyThemeOp:
                     ctx,
                 )
             restore_monitor_transforms(transforms)
+
+        if palette_changed:
+            current, _ = _current_theme_dirs()
+            colors = current / "colors.toml"
+            shell = current / "shell.toml"
+            apply_shell_theme_live(
+                colors if colors.is_file() else colors_file,
+                shell if shell.is_file() else None,
+            )
         return True
 
 
