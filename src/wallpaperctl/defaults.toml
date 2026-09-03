@@ -21,6 +21,7 @@ steam_theme = false
 cosmic_theme = true
 cde_theme = true
 omarchy = true
+browser_policy = true
 pywalfox = true
 
 [wallust]
@@ -68,6 +69,9 @@ wallpaper_dir = "~/Wallpapers"
 # omarchy_accent_strategy = "warmest"         # palette strategy for colors.toml accent
 # omarchy_timeout = 60                        # omarchy theme refresh budget (seconds; runner adds slack)
 # omarchy_refresh_apps = true                 # false = stage colors.toml only, no app retint
+
+# Chromium-family browser tint via managed policies (see theme/browser.py)
+# browser_color_scheme = "dark"               # dark | light | device
 # omarchy_skip_unchanged = true               # skip refresh when palette is unchanged
 
 # Pywalfox (Firefox) — boost colors.json contrast then pywalfox update

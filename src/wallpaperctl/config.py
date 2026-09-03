@@ -112,6 +112,12 @@ class OpsConfig:
     # Standalone WM GTK: tint stock Adwaita via user gtk.css (Omarchy-style)
     # instead of recoloring the vendored FlatColor theme. See theme/adwaita.py.
     gtk_adwaita_tint: bool = True
+    # Chromium-family (Brave/Chromium/Chrome/Edge) UI tint + color scheme via
+    # managed policies (Omarchy-style). Directories are created once with
+    # escalation: wallpaperctl setup browser-policies. See theme/browser.py.
+    enable_browser_policy: bool = True
+    # "dark" | "light" | "device"
+    browser_color_scheme: str = "dark"
     dynamic_icon_theme_name: str = "wallust-dynamic-icons"
 
     rgb_color_strategy: str = "warmest"

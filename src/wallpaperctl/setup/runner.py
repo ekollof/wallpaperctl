@@ -6,6 +6,10 @@ import sys
 
 from wallpaperctl.detect.desktop import detect_desktop
 from wallpaperctl.setup.bootstrap import bootstrap_config
+from wallpaperctl.setup.browser_policies import (
+    browser_policy_status,
+    install_browser_policies,
+)
 from wallpaperctl.setup.deps import (
     Kind,
     animated_backend_hint,
@@ -62,6 +66,8 @@ def run_setup(
         return bootstrap_omarchy(yes=yes, force=force)
     if action in ("themes", "gtk-themes", "flatcolor"):
         return bootstrap_themes(force=force, yes=yes)
+    if action in ("browser-policies", "browser-policy"):
+        return install_browser_policies(yes=yes)
     if action in ("all", "init"):
         print("=== 1/5 config directories ===")
         bootstrap_config(force=force)
@@ -89,7 +95,8 @@ def run_setup(
 
     print(f"Unknown setup action: {action}", file=sys.stderr)
     print(
-        "Use: check | install | wallust | themes | config | omarchy | all",
+        "Use: check | install | wallust | themes | config | omarchy "
+        "| browser-policies | all",
         file=sys.stderr,
     )
     return 1
@@ -191,6 +198,16 @@ def cmd_check(
         print(f"  FlatColor-dark: {'yes' if ts['flatcolor_dark'] else 'NO'}")
     print()
 
+    bp = browser_policy_status()
+    print("Browser policies (Brave/Chromium tint):")
+    if de.omarchy:
+        print("  managed by Omarchy (omarchy-theme-set-browser)")
+    elif bp["ready"]:
+        print(f"  managed dirs ready: {', '.join(bp['active'])}")
+    else:
+        print("  missing — wallpaperctl setup browser-policies")
+    print()
+
     print("Omarchy:")
     print(f"  binary:        {'yes' if ost['binary'] else 'no'}")
     print(f"  omarchy-shell: {'running' if ost['shell_running'] else 'not running'}")
@@ -285,4 +302,10 @@ def cmd_install(de, profile: str, *, yes: bool = False, optional: bool = False) 
         print("wallust is AUR-only on Arch (no repo package). Try:")
         print("  paru -S wallust-git      # or yay -S wallust-git")
         print("  cargo install wallust")
+    print()
+    print("Browser policies (Brave/Chromium theme tint):")
+    if de.omarchy:
+        print("  Skipped: Omarchy owns them (omarchy-theme-set-browser).")
+    else:
+        install_browser_policies(yes=yes)
     return rc if rc else rc_py

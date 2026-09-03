@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
 
 from wallpaperctl.context import WallpaperContext
+from wallpaperctl.theme.browser import BrowserPolicyOp
 from wallpaperctl.theme.cde import CdeThemeOp
 from wallpaperctl.theme.cinnamon_theme import CinnamonThemeOp
 from wallpaperctl.theme.cosmic import CosmicThemeOp
@@ -32,6 +33,7 @@ log = logging.getLogger("wallpaperctl")
 THEME_OPS = [
     WallustOp(),
     OmarchyThemeOp(),  # needs wallust colors; Dynamic Wallpapers omarchy theme retint
+    BrowserPolicyOp(),  # needs wallust colors; Brave/Chromium policy tint (Omarchy skipped)
     CosmicThemeOp(),  # needs wallust colors; COSMIC v2 hex accent files
     PywalfoxOp(),  # contrast-boost colors.json + pywalfox update
     XresourcesOp(),

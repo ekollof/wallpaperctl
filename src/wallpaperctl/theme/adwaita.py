@@ -29,7 +29,7 @@ BLACK = "#000000"
 WHITE = "#FFFFFF"
 
 
-def _ensure_hash(c: str) -> str:
+def ensure_hash(c: str) -> str:
     c = (c or "").strip()
     if not c:
         return ""
@@ -51,7 +51,7 @@ def _mix(start: str, end: str, amount: float) -> str:
         sr, sg, sb = hex_to_rgb(start)
         er, eg, eb = hex_to_rgb(end)
     except ValueError:
-        return _ensure_hash(start) or BLACK
+        return ensure_hash(start) or BLACK
     amount = max(0.0, min(1.0, amount))
     mixed = (
         round(sr * (1 - amount) + er * amount),
@@ -59,6 +59,19 @@ def _mix(start: str, end: str, amount: float) -> str:
         round(sb * (1 - amount) + eb * amount),
     )
     return f"#{mixed[0]:02x}{mixed[1]:02x}{mixed[2]:02x}"
+
+
+def hex_palette(colors: dict) -> list[str]:
+    """16-entry lowercase hex palette from a pywal-format colors dict.
+
+    Entries fall back to the wallpaper background when an ANSI slot is empty.
+    """
+    special = colors.get("special") or {}
+    ansi = colors.get("colors") or {}
+    bg = ensure_hash(str(special.get("background", ""))) or "#101010"
+    return [
+        ensure_hash(str(ansi.get(f"color{i}", ""))) or bg for i in range(16)
+    ]
 
 
 def build_adwaita_css(
@@ -71,16 +84,16 @@ def build_adwaita_css(
     ansi = colors.get("colors") or {}
 
     def ansi_hex(i: int) -> str:
-        return _ensure_hash(str(ansi.get(f"color{i}", "")))
+        return ensure_hash(str(ansi.get(f"color{i}", "")))
 
-    bg = _ensure_hash(str(special.get("background", ""))) or ansi_hex(0) or "#101010"
-    fg = _ensure_hash(str(special.get("foreground", ""))) or ansi_hex(15) or "#cccccc"
+    bg = ensure_hash(str(special.get("background", ""))) or ansi_hex(0) or "#101010"
+    fg = ensure_hash(str(special.get("foreground", ""))) or ansi_hex(15) or "#cccccc"
     palette16 = [ansi_hex(i) or bg for i in range(16)]
     muted = palette16[8] or _mix(bg, fg, 0.45)
     accent, accent_soft = pick_accent(palette16, strategy=accent_strategy)
     # pick_accent resolves via color_at_line, which uppercases.
-    accent = _ensure_hash(accent)
-    accent_soft = _ensure_hash(accent_soft)
+    accent = ensure_hash(accent)
+    accent_soft = ensure_hash(accent_soft)
     on_accent = BLACK if _luma(accent) > 0.55 else WHITE
 
     # Terminal-palette block (keeps gtk4 consumers like ghostty working).

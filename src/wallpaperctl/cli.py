@@ -491,9 +491,11 @@ def _subcommand_main(argv: list[str]) -> int:
             "themes",
             "config",
             "omarchy",
+            "browser-policies",
             "all",
         ],
-        help="check | install | wallust | wallust-templates | themes | config | omarchy | all",
+        help="check | install | wallust | wallust-templates | themes | config "
+        "| omarchy | browser-policies | all",
     )
     p_setup.add_argument(
         "-y",
