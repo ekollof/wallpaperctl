@@ -5,6 +5,10 @@ screen is rotated (Hyprland recreates the output). Patching the plugin would
 be lost on ``omarchy plugin update``, so wallpaperctl owns a small watcher
 instead: on monitor add/remove/reload it stop+plays the clip from the
 plugin's state file, which recreates the video surfaces through official IPC.
+
+At session start the same stop+play is re-issued once: the plugin maps its
+video surface before the shell's static background surface, which then
+stacks on top and hides the playing clip behind a frozen frame.
 """
 
 from __future__ import annotations
@@ -22,6 +26,7 @@ from wallpaperctl.omarchy import (
     motion_state_file,
     motion_wallpaper_play,
     motion_wallpaper_stop,
+    theme_wants_motion,
 )
 from wallpaperctl.util import run, spawn_detached
 
@@ -41,6 +46,8 @@ _LAYOUT_EVENTS = frozenset(
 _DEBOUNCE_S = 0.35
 _RECONNECT_S = 1.0
 _POLL_S = 0.4
+_STARTUP_ATTEMPTS = 8
+_STARTUP_RETRY_S = 1.5
 
 
 def is_layout_event(line: str) -> bool:
@@ -216,29 +223,58 @@ def restore_monitor_transforms(snapshot: list[tuple[str, int]]) -> bool:
         time.sleep(0.12)
 
 
+def _state_playback_clip() -> Path | None:
+    """Video path from the plugin's state file when playback should be active."""
+    try:
+        import json
+
+        data = json.loads(motion_state_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    enabled = data.get("enabled")
+    if not (enabled is True or str(enabled).lower() == "true"):
+        return None
+    video = Path(str(data.get("videoPath") or "")).expanduser()
+    return video if video.is_file() else None
+
+
 def rebind_motion_wallpaper(*, force: bool = False) -> bool:
     """Stop+play the persisted clip so surfaces are recreated after a rotate."""
     if not force and _rebind_suppressed():
         return False
-    path = motion_state_file()
-    try:
-        import json
-
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError):
+    # Do not resurrect a clip after `omarchy theme set` switched to a
+    # still-only theme (hyprctl reload would otherwise rebind from state.json).
+    if not force and not theme_wants_motion():
         return False
-    if not isinstance(data, dict):
-        return False
-    enabled = data.get("enabled")
-    if not (enabled is True or str(enabled).lower() == "true"):
-        return False
-    video = Path(str(data.get("videoPath") or "")).expanduser()
-    if not video.is_file():
+    video = _state_playback_clip()
+    if video is None:
         return False
     motion_wallpaper_stop()
     # Give the plugin a beat to destroy surfaces before play recreates them.
     time.sleep(0.12)
     return motion_wallpaper_play(video)
+
+
+def startup_rebind(*, attempts: int = _STARTUP_ATTEMPTS) -> bool:
+    """Re-issue stop+play once at session start.
+
+    The plugin resumes playback at shell startup by mapping its video surface
+    before the static background surface does, leaving the frozen still frame
+    stacked on top of the playing video. Re-issuing play remaps the video
+    surface above it. Retried while omarchy-shell IPC is still coming up.
+    """
+    if _state_playback_clip() is None or not theme_wants_motion():
+        return False
+    for _ in range(max(1, attempts)):
+        try:
+            if rebind_motion_wallpaper():
+                return True
+        except Exception as e:  # noqa: BLE001 — watcher must not die
+            log.debug("omarchy-watch startup rebind failed: %s", e)
+        time.sleep(_STARTUP_RETRY_S)
+    return False
 
 
 def _pid_alive(pid: int) -> bool:
@@ -308,9 +344,16 @@ def _write_own_pid() -> None:
     _PID_FILE.write_text(f"{os.getpid()}\n", encoding="utf-8")
 
 
-def watch_loop(*, once_socket: Path | None = None) -> int:
+def watch_loop(
+    *, once_socket: Path | None = None, startup: bool = True
+) -> int:
     """Block, reading Hyprland events until the socket goes away (then retry)."""
     _write_own_pid()
+    if startup and once_socket is None:
+        try:
+            startup_rebind()
+        except Exception as e:  # noqa: BLE001 — watcher must not die
+            log.debug("omarchy-watch startup rebind crashed: %s", e)
     pending_until = 0.0
     last_fp = monitor_layout_fingerprint()
     while True:

@@ -1,0 +1,47 @@
+#!/bin/bash
+# wallpaperctl hook: stop motion-wallpaper unless the new theme ships a video.
+#
+# Installed by `wallpaperctl setup omarchy` into
+# ~/.config/omarchy/hooks/theme-set.d/ — runs on every `omarchy theme set`.
+#
+# The nosignal.motion-wallpaper plugin does not stop on theme changes (its
+# README: "the video keeps playing until you stop it"). wallpaperctl stages
+# wallpaper-video.<ext> on video-capable themes; if the newly staged theme
+# has one, play it, otherwise stop via shell IPC so the static background
+# shows through.
+#
+# NOTE: the omarchy hook runner executes hooks with `bash "$hook"` — this
+# must stay a bash script. `$1` is the theme slug.
+
+THEME_DIR="${HOME}/.local/state/omarchy/current/theme"
+CACHE_DIR="${HOME}/.cache/wallpaperctl"
+
+# Cover omarchy-restart-hyprctl: the motion watcher would otherwise
+# stop+play from a stale state.json after configreloaded.
+mkdir -p "$CACHE_DIR"
+echo $(( $(date +%s) + 8 )) >"$CACHE_DIR/omarchy-motion-suppress"
+
+ipc() {
+  command -v omarchy-shell >/dev/null 2>&1 || return 0
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 2 omarchy-shell motion-wallpaper "$@" >/dev/null 2>&1 || true
+  else
+    omarchy-shell motion-wallpaper "$@" >/dev/null 2>&1 || true
+  fi
+}
+
+video=""
+for ext in mp4 webm mkv mov; do
+  candidate="$THEME_DIR/wallpaper-video.$ext"
+  if [[ -f $candidate ]]; then
+    video=$candidate
+    break
+  fi
+done
+
+if [[ -n $video ]]; then
+  ipc play "$video"
+else
+  ipc stop
+fi
+exit 0

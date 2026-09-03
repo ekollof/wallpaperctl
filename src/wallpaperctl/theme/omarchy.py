@@ -191,7 +191,7 @@ def sync_theme_media(
 
     backgrounds/ holds exactly the active (still) image so re-selecting the
     theme in the switcher restores the current wallpaper. wallpaper-video.<ext>
-    makes the stock motion-wallpaper theme-set hook play/stop the video.
+    is what the wallpaperctl theme-set hook plays (or stops, when absent).
     """
     ok = True
     backgrounds = theme_dir / "backgrounds"

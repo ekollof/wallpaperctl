@@ -9,6 +9,7 @@ from wallpaperctl.omarchy_watch import (
     rebind_motion_wallpaper,
     restore_monitor_transforms,
     snapshot_monitor_transforms,
+    startup_rebind,
     suppress_layout_rebind,
 )
 
@@ -33,8 +34,17 @@ def test_layout_event_prefixes():
     assert not is_layout_event("fullscreen>>1")
 
 
+def _stage_theme_video(tmp_path, name: str = "wallpaper-video.mp4"):
+    theme = tmp_path / ".local" / "state" / "omarchy" / "current" / "theme"
+    theme.mkdir(parents=True)
+    clip = theme / name
+    clip.write_bytes(b"v")
+    return clip
+
+
 def test_rebind_stop_then_play(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
+    _stage_theme_video(tmp_path)
     state = tmp_path / ".local" / "state" / "motion-wallpaper"
     state.mkdir(parents=True)
     video = tmp_path / "clip.mp4"
@@ -103,6 +113,7 @@ def test_suppress_blocks_rebind(monkeypatch, tmp_path):
         "wallpaperctl.omarchy_watch._SUPPRESS_FILE",
         tmp_path / "cache" / "omarchy-motion-suppress",
     )
+    _stage_theme_video(tmp_path)
     state = tmp_path / ".local" / "state" / "motion-wallpaper"
     state.mkdir(parents=True)
     video = tmp_path / "clip.mp4"
@@ -122,8 +133,32 @@ def test_suppress_blocks_rebind(monkeypatch, tmp_path):
         play.assert_called_once()
 
 
+def test_rebind_skips_when_theme_has_no_video(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / ".local" / "state" / "omarchy" / "current").mkdir(parents=True)
+    (
+        tmp_path / ".local" / "state" / "omarchy" / "current" / "theme.name"
+    ).write_text("ethereal\n", encoding="utf-8")
+    state = tmp_path / ".local" / "state" / "motion-wallpaper"
+    state.mkdir(parents=True)
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"v")
+    (state / "state.json").write_text(
+        json.dumps({"enabled": True, "videoPath": str(video)}),
+        encoding="utf-8",
+    )
+    with (
+        patch("wallpaperctl.omarchy_watch.motion_wallpaper_stop") as stop,
+        patch("wallpaperctl.omarchy_watch.motion_wallpaper_play") as play,
+    ):
+        assert not rebind_motion_wallpaper()
+    stop.assert_not_called()
+    play.assert_not_called()
+
+
 def test_rebind_skips_when_stopped(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
+    _stage_theme_video(tmp_path)
     state = tmp_path / ".local" / "state" / "motion-wallpaper"
     state.mkdir(parents=True)
     video = tmp_path / "clip.mp4"
@@ -139,3 +174,74 @@ def test_rebind_skips_when_stopped(monkeypatch, tmp_path):
         assert not rebind_motion_wallpaper()
     stop.assert_not_called()
     play.assert_not_called()
+
+
+def test_startup_rebind_retries_until_shell_up(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _stage_theme_video(tmp_path)
+    state = tmp_path / ".local" / "state" / "motion-wallpaper"
+    state.mkdir(parents=True)
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"v")
+    (state / "state.json").write_text(
+        json.dumps({"enabled": True, "videoPath": str(video)}),
+        encoding="utf-8",
+    )
+    with (
+        patch("wallpaperctl.omarchy_watch.motion_wallpaper_stop"),
+        patch(
+            "wallpaperctl.omarchy_watch.motion_wallpaper_play",
+            side_effect=[False, True],
+        ) as play,
+        patch("wallpaperctl.omarchy_watch.time.sleep", lambda s: None),
+    ):
+        assert startup_rebind()
+    assert play.call_count == 2
+    assert play.call_args[0][0] == video
+
+
+def test_startup_rebind_skips_when_disabled(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _stage_theme_video(tmp_path)
+    state = tmp_path / ".local" / "state" / "motion-wallpaper"
+    state.mkdir(parents=True)
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"v")
+    (state / "state.json").write_text(
+        json.dumps({"enabled": False, "videoPath": str(video)}),
+        encoding="utf-8",
+    )
+    with (
+        patch("wallpaperctl.omarchy_watch.motion_wallpaper_stop") as stop,
+        patch("wallpaperctl.omarchy_watch.motion_wallpaper_play") as play,
+        patch("wallpaperctl.omarchy_watch.time.sleep") as sleep,
+    ):
+        assert not startup_rebind()
+    stop.assert_not_called()
+    play.assert_not_called()
+    sleep.assert_not_called()
+
+
+def test_startup_rebind_skips_when_theme_has_no_video(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / ".local" / "state" / "omarchy" / "current").mkdir(parents=True)
+    (
+        tmp_path / ".local" / "state" / "omarchy" / "current" / "theme.name"
+    ).write_text("ethereal\n", encoding="utf-8")
+    state = tmp_path / ".local" / "state" / "motion-wallpaper"
+    state.mkdir(parents=True)
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"v")
+    (state / "state.json").write_text(
+        json.dumps({"enabled": True, "videoPath": str(video)}),
+        encoding="utf-8",
+    )
+    with (
+        patch("wallpaperctl.omarchy_watch.motion_wallpaper_stop") as stop,
+        patch("wallpaperctl.omarchy_watch.motion_wallpaper_play") as play,
+        patch("wallpaperctl.omarchy_watch.time.sleep") as sleep,
+    ):
+        assert not startup_rebind()
+    stop.assert_not_called()
+    play.assert_not_called()
+    sleep.assert_not_called()

@@ -41,6 +41,36 @@ def user_theme_dir(slug: str = THEME_SLUG) -> Path:
     return user_themes_dir() / slug
 
 
+def staged_theme_dir() -> Path:
+    """Currently applied theme files (~/.local/state/omarchy/current/theme)."""
+    return state_dir() / "theme"
+
+
+def theme_motion_video(theme_dir: Path | None = None) -> Path | None:
+    """First ``wallpaper-video.*`` in *theme_dir*, if any."""
+    root = theme_dir if theme_dir is not None else staged_theme_dir()
+    try:
+        for ext in MOTION_VIDEO_EXTENSIONS:
+            path = root / f"wallpaper-video.{ext}"
+            if path.is_file():
+                return path
+    except OSError:
+        return None
+    return None
+
+
+def theme_wants_motion() -> bool:
+    """True when the active Omarchy theme should show a motion wallpaper.
+
+    wallpaperctl stages the clip in the user Dynamic Wallpapers dir and plays
+    via IPC without restaging ``current/theme``. Other video themes ship
+    ``wallpaper-video.*`` in the staged current theme.
+    """
+    if is_dynamic_theme_active():
+        return theme_motion_video(user_theme_dir()) is not None
+    return theme_motion_video() is not None
+
+
 def omarchy_config_dir() -> Path:
     return home() / ".config" / "omarchy"
 

@@ -12,6 +12,7 @@ from wallpaperctl.omarchy import (
     current_theme_name,
     is_omarchy_shell_running,
     omarchy_available,
+    omarchy_env,
     run_omarchy,
     user_theme_dir,
 )
@@ -93,6 +94,15 @@ def _ensure_qt_multimedia(*, yes: bool) -> bool:
     print("Warning: Qt Multimedia install failed; animated wallpapers fall back")
     print("  to mpvpaper. After installing it manually, run: omarchy-restart-shell")
     return False
+
+# Overlay wallpaper tools leftover from a generic ``setup install`` on Omarchy.
+# Omarchy-shell owns the background; these fight it. Keys are binaries, values
+# are pacman/AUR package names to drop (``omarchy pkg drop`` ignores missing).
+_OVERLAY_BINARIES: dict[str, tuple[str, ...]] = {
+    "hyprpaper": ("hyprpaper",),
+    "mpvpaper": ("mpvpaper",),
+    "xwinwrap": ("xwinwrap-git", "xwinwrap"),
+}
 
 
 def _ask(prompt: str, *, yes: bool) -> bool:
@@ -176,6 +186,14 @@ def _ensure_motion_plugin(*, yes: bool) -> bool:
     return False
 
 
+def _hooks_dest() -> Path:
+    return home() / ".config" / "omarchy" / "hooks"
+
+
+def motion_hook_installed() -> bool:
+    return (_hooks_dest() / "theme-set.d" / "wallpaperctl-motion").is_file()
+
+
 def omarchy_status() -> dict:
     theme_dir = user_theme_dir()
     return {
@@ -187,6 +205,7 @@ def omarchy_status() -> dict:
         "theme_installed": (theme_dir / "colors.toml").is_file(),
         "motion_plugin": motion_plugin_status(),
         "qt_multimedia": qt_multimedia_present(),
+        "motion_hook": motion_hook_installed(),
         "wallust": wallust_status(),
     }
 
@@ -225,12 +244,62 @@ def _install_wallust(*, yes: bool) -> bool:
     return False
 
 
+def leftover_overlay_packages() -> list[str]:
+    """Package names of leftover overlay wallpaper tools still on PATH."""
+    pkgs: list[str] = []
+    seen: set[str] = set()
+    for binary, names in _OVERLAY_BINARIES.items():
+        if not have(binary):
+            continue
+        for name in names:
+            if name not in seen:
+                seen.add(name)
+                pkgs.append(name)
+    return pkgs
+
+
+def _drop_overlay_packages() -> None:
+    """Remove hyprpaper/mpvpaper/xwinwrap leftover from older setup install.
+
+    ``omarchy pkg drop`` already ignores packages that are not installed.
+    Stdio is not captured so sudo can prompt.
+    """
+    pkgs = leftover_overlay_packages()
+    if not pkgs:
+        return
+    print("Leftover overlay packages from an older wallpaperctl setup:")
+    for pkg in pkgs:
+        print(f"  - {pkg}  (fights Omarchy wallpaper)")
+    if not have("omarchy"):
+        print("  Drop manually: sudo pacman -Rns --noconfirm " + " ".join(pkgs))
+        return
+    import subprocess
+
+    print("+ omarchy pkg drop " + " ".join(pkgs))
+    try:
+        proc = subprocess.run(
+            ["omarchy", "pkg", "drop", *pkgs],
+            check=False,
+            env=omarchy_env(),
+        )
+    except FileNotFoundError:
+        print("Warning: omarchy not found while dropping packages.")
+        print(f"  Manual: omarchy pkg drop {' '.join(pkgs)}")
+        return
+    if proc.returncode == 0 and not leftover_overlay_packages():
+        print(f"removed packages: {', '.join(pkgs)}")
+        return
+    print("Warning: could not drop overlay packages (sudo required?).")
+    print(f"  Manual: omarchy pkg drop {' '.join(pkgs)}")
+
+
 def remove_omarchy_conflicts() -> None:
-    """Drop leftover files from a generic wallpaperctl setup on Omarchy.
+    """Drop leftover files/packages from a generic wallpaperctl setup on Omarchy.
 
     Older ``setup all`` runs installed FlatColor, wrote a wallust GTK4 overlay,
-    and left a hyprpaper.conf pointing at wallpaperctl's cache. Omarchy uses
-    Adwaita + omarchy-shell for those surfaces.
+    left a hyprpaper.conf pointing at wallpaperctl's cache, and explicitly
+    installed hyprpaper/mpvpaper/xwinwrap. Omarchy uses Adwaita + omarchy-shell
+    for those surfaces.
     """
     stale_files = [
         home() / ".config" / "opencode" / "themes" / "wallust.json",
@@ -287,9 +356,11 @@ def remove_omarchy_conflicts() -> None:
             except OSError:
                 pass
 
+    _drop_overlay_packages()
+
 
 def _install_omarchy_hooks() -> int:
-    """Install wallpaperctl theme-set hooks (starship follows Omarchy themes)."""
+    """Install wallpaperctl Omarchy hooks (starship + motion-wallpaper)."""
     import shutil
 
     from wallpaperctl.util import run
@@ -299,7 +370,7 @@ def _install_omarchy_hooks() -> int:
         print("Packaged omarchy hooks not found in wallpaperctl install.")
         return 1
 
-    dest_root = home() / ".config" / "omarchy" / "hooks"
+    dest_root = _hooks_dest()
     dest_root.mkdir(parents=True, exist_ok=True)
     for src in sorted(pkg.rglob("*")):
         if not src.is_file():
@@ -310,11 +381,15 @@ def _install_omarchy_hooks() -> int:
         if not dest.is_file() or src.read_bytes() != dest.read_bytes():
             shutil.copy2(src, dest)
             print(f"hook:    {dest}")
+        else:
+            print(f"hook:    {dest} (up to date)")
         dest.chmod(dest.stat().st_mode | 0o111)
 
-    # sync once now so the prompt matches the active theme immediately
-    for hook in sorted((dest_root / "theme-set.d").glob("wallpaperctl-*")):
-        run([str(hook)], timeout=30)
+    # Starship only: render the prompt from the active theme immediately.
+    # Do not run wallpaperctl-motion here — that would play/stop video during setup.
+    starship = dest_root / "theme-set.d" / "wallpaperctl-starship"
+    if starship.is_file():
+        run([str(starship)], timeout=30)
     return 0
 
 

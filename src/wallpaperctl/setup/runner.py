@@ -12,7 +12,11 @@ from wallpaperctl.setup.deps import (
     classify_deps,
     de_profile,
 )
-from wallpaperctl.setup.omarchy_bootstrap import bootstrap_omarchy, omarchy_status
+from wallpaperctl.setup.omarchy_bootstrap import (
+    bootstrap_omarchy,
+    leftover_overlay_packages,
+    omarchy_status,
+)
 from wallpaperctl.setup.opencode_bootstrap import opencode_status
 from wallpaperctl.setup.packages import (
     detect_package_manager,
@@ -210,6 +214,19 @@ def cmd_check(
             print("  qt-multimedia: present")
     else:
         print("  motion plugin: NO — animated wallpapers fall back to mpvpaper")
+    if ost.get("motion_hook"):
+        print("  motion hook:   theme-set stops video unless the theme ships one")
+    else:
+        print("  motion hook:   NO — wallpaperctl setup omarchy")
+    leftover = leftover_overlay_packages()
+    if leftover:
+        print(
+            "  leftover overlay pkgs: "
+            + ", ".join(leftover)
+            + " (older setup install; fight Omarchy wallpaper)"
+        )
+        print("  Drop: wallpaperctl setup omarchy")
+        print(f"    or: omarchy pkg drop {' '.join(leftover)}")
     print()
 
     if missing_req:

@@ -108,7 +108,7 @@ wallpaperctl setup install        # offer to install missing packages
 wallpaperctl setup wallust        # wallust.toml + templates + hooks + OpenCode theme reloader
 wallpaperctl setup wallust-templates  # templates/scripts only (keep your toml)
 wallpaperctl setup wallust --force    # overwrite existing wallust.toml (backs up first)
-wallpaperctl setup themes         # install FlatColor / FlatColor-dark GTK themes
+wallpaperctl setup themes         # FlatColor GTK themes (no-op on Omarchy)
 wallpaperctl setup config         # create dirs + sample ops.toml / config.sh
 wallpaperctl setup all            # config + themes + check + install + wallust
 wallpaperctl migrate              # cutover checklist (PATH, config, tools)
@@ -244,6 +244,8 @@ This creates **one** persistent user theme, *Dynamic Wallpapers*
 (`~/.config/omarchy/themes/dynamic-wallpapers/`), and activates it. It also
 makes sure the omarchy-shell **Motion Wallpaper** plugin (third-party,
 `nosignal.motion-wallpaper`) is installed and enabled for animated wallpapers,
+installs a **theme-set hook** that stops motion-wallpaper (via shell IPC) unless
+the new theme ships `wallpaper-video.*`,
 and swaps wallust to a **palette-only config**: on Omarchy, wallpaperctl
 provides the backdrop and the palette while **all app theming is handed to
 Omarchy** (the stock wallust templates/hooks would fight omarchy's generated

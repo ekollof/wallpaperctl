@@ -953,12 +953,55 @@ def test_remove_omarchy_conflicts(monkeypatch, tmp_path, capsys):
     dark = tmp_path / ".local" / "share" / "themes" / "FlatColor-dark"
     dark.symlink_to("FlatColor")
 
-    ob.remove_omarchy_conflicts()
+    with patch.object(ob, "_drop_overlay_packages"):
+        ob.remove_omarchy_conflicts()
     assert not gtk.exists()
     assert keep.exists()
     assert not hp.exists()
     assert not fc.exists()
     assert not dark.exists()
+
+
+def test_leftover_overlay_packages(monkeypatch):
+    def fake_have(name: str) -> bool:
+        return name in {"hyprpaper", "xwinwrap"}
+
+    monkeypatch.setattr(ob, "have", fake_have)
+    assert ob.leftover_overlay_packages() == [
+        "hyprpaper",
+        "xwinwrap-git",
+        "xwinwrap",
+    ]
+
+
+def test_drop_overlay_packages_calls_omarchy_pkg_drop(monkeypatch, capsys):
+    monkeypatch.setattr(ob, "have", lambda name: name == "omarchy")
+    monkeypatch.setattr(ob, "omarchy_env", lambda: {"PATH": "/usr/bin"})
+    calls = {"n": 0}
+
+    def leftover():
+        calls["n"] += 1
+        return ["hyprpaper", "mpvpaper"] if calls["n"] == 1 else []
+
+    monkeypatch.setattr(ob, "leftover_overlay_packages", leftover)
+
+    class _Proc:
+        returncode = 0
+
+    with patch("subprocess.run", return_value=_Proc()) as run_mock:
+        ob._drop_overlay_packages()
+    run_mock.assert_called_once()
+    args = run_mock.call_args[0][0]
+    assert args[:3] == ["omarchy", "pkg", "drop"]
+    assert "hyprpaper" in args and "mpvpaper" in args
+    assert "removed packages:" in capsys.readouterr().out
+
+
+def test_remove_omarchy_conflicts_drops_overlay_packages(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    with patch.object(ob, "_drop_overlay_packages") as drop:
+        ob.remove_omarchy_conflicts()
+    drop.assert_called_once()
 
 
 def test_install_omarchy_wallust_config(monkeypatch, tmp_path):
@@ -984,6 +1027,19 @@ def test_install_omarchy_wallust_config(monkeypatch, tmp_path):
     assert omarchy_config_installed()
     backups = list((tmp_path / ".config" / "wallust").glob("*.bak-wallpaperctl"))
     assert len(backups) == 1 and "full" in backups[0].read_text(encoding="utf-8")
+
+
+def test_install_omarchy_hooks_copies_motion_and_starship(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    with patch("wallpaperctl.util.run"):
+        assert ob._install_omarchy_hooks() == 0
+    dest = tmp_path / ".config" / "omarchy" / "hooks" / "theme-set.d"
+    assert (dest / "wallpaperctl-motion").is_file()
+    assert (dest / "wallpaperctl-starship").is_file()
+    motion = (dest / "wallpaperctl-motion").read_text(encoding="utf-8")
+    assert "motion-wallpaper" in motion and "stop" in motion
+    # executable bit (setup chmod | 0o111)
+    assert (dest / "wallpaperctl-motion").stat().st_mode & 0o111
 
 
 def test_setup_swaps_wallust_config(monkeypatch, tmp_path):
@@ -1194,6 +1250,88 @@ def test_starship_hook_renders_theme_palette(monkeypatch, tmp_path):
     assert 'style_user = "bg:#1e1e2e"' in rendered
     assert 'style_root = "bg:#ff5555 fg:#50fa7b"' in rendered
     assert "#bd93f9" in rendered and "#ff79c6" in rendered and "#6c7086" in rendered
+
+
+def _motion_hook() -> Path:
+    return (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "wallpaperctl"
+        / "data"
+        / "omarchy"
+        / "hooks"
+        / "theme-set.d"
+        / "wallpaperctl-motion"
+    )
+
+
+def test_motion_hook_stops_when_theme_has_no_video(monkeypatch, tmp_path):
+    import os
+    import subprocess
+
+    _fake_home(monkeypatch, tmp_path)
+    hook = _motion_hook()
+    assert hook.is_file()
+    theme = tmp_path / ".local/state/omarchy/current/theme"
+    theme.mkdir(parents=True)
+
+    ipc = tmp_path / "bin" / "omarchy-shell"
+    ipc.parent.mkdir(parents=True)
+    log = tmp_path / "ipc.log"
+    ipc.write_text(
+        "#!/bin/sh\n"
+        f'echo "$@" >>"{log}"\n',
+        encoding="utf-8",
+    )
+    ipc.chmod(0o755)
+    env = dict(os.environ, HOME=str(tmp_path))
+    env["PATH"] = f"{ipc.parent}{os.pathsep}{env.get('PATH', '')}"
+    result = subprocess.run(["bash", str(hook), "ethereal"], env=env, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert log.read_text(encoding="utf-8").strip() == "motion-wallpaper stop"
+    suppress = tmp_path / ".cache/wallpaperctl/omarchy-motion-suppress"
+    assert suppress.is_file()
+
+
+def test_motion_hook_plays_when_theme_ships_video(monkeypatch, tmp_path):
+    import os
+    import subprocess
+
+    _fake_home(monkeypatch, tmp_path)
+    hook = _motion_hook()
+    theme = tmp_path / ".local/state/omarchy/current/theme"
+    theme.mkdir(parents=True)
+    video = theme / "wallpaper-video.mp4"
+    video.write_bytes(b"v")
+
+    ipc = tmp_path / "bin" / "omarchy-shell"
+    ipc.parent.mkdir(parents=True)
+    log = tmp_path / "ipc.log"
+    ipc.write_text(
+        "#!/bin/sh\n"
+        f'echo "$@" >>"{log}"\n',
+        encoding="utf-8",
+    )
+    ipc.chmod(0o755)
+    env = dict(os.environ, HOME=str(tmp_path))
+    env["PATH"] = f"{ipc.parent}{os.pathsep}{env.get('PATH', '')}"
+    result = subprocess.run(
+        ["bash", str(hook), "dynamic-wallpapers"], env=env, capture_output=True
+    )
+    assert result.returncode == 0, result.stderr
+    assert log.read_text(encoding="utf-8").strip() == f"motion-wallpaper play {video}"
+
+
+def test_theme_wants_motion_uses_user_dir_when_dynamic(monkeypatch, tmp_path):
+    from wallpaperctl.omarchy import theme_wants_motion
+
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+    assert not theme_wants_motion()
+    user = tmp_path / ".config" / "omarchy" / "themes" / THEME_SLUG
+    user.mkdir(parents=True)
+    (user / "wallpaper-video.webm").write_bytes(b"v")
+    assert theme_wants_motion()
 
 
 def test_starship_hook_keeps_file_on_unresolvable_theme(monkeypatch, tmp_path):

@@ -153,6 +153,24 @@ def test_animated_backend_hint_needs_mpv(monkeypatch):
     assert animated_backend_hint(DesktopEnvironment(), statuses) == ""
 
 
+def test_bootstrap_themes_noop_on_omarchy(monkeypatch, tmp_path):
+    from wallpaperctl.detect.desktop import DesktopEnvironment
+    from wallpaperctl.setup import themes_bootstrap as tb
+
+    dest = tmp_path / ".local" / "share" / "themes" / "FlatColor"
+    monkeypatch.setattr(tb, "home", lambda: tmp_path)
+    with (
+        patch(
+            "wallpaperctl.detect.desktop.detect_desktop",
+            return_value=DesktopEnvironment(hyprland=True, omarchy=True),
+        ),
+        patch.object(tb, "_packaged_themes_root") as pkg,
+    ):
+        assert tb.bootstrap_themes(yes=True) == 0
+    pkg.assert_not_called()
+    assert not dest.exists()
+
+
 def test_setup_all_on_omarchy_skips_gtk_and_full_wallust(monkeypatch):
     from wallpaperctl.setup import runner as sr
 

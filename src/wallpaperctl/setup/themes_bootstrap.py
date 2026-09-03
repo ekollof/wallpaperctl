@@ -40,6 +40,14 @@ def bootstrap_themes(*, force: bool = False, yes: bool = False) -> int:
     """
     Copy packaged FlatColor into ~/.local/share/themes and link FlatColor-dark.
     """
+    from wallpaperctl.detect.desktop import detect_desktop
+
+    if detect_desktop().omarchy:
+        print("Skipped: Omarchy owns GTK (Adwaita via omarchy-theme-set-gnome).")
+        print("  Leftover FlatColor from an older setup is removed by:")
+        print("    wallpaperctl setup omarchy")
+        return 0
+
     pkg = _packaged_themes_root()
     if pkg is None:
         print("Packaged themes not found in wallpaperctl install.")
