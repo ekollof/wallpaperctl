@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import signal
 import socket
 import stat
@@ -55,6 +56,17 @@ def _is_socket(path: Path) -> bool:
         return stat.S_ISSOCK(path.stat().st_mode)
     except OSError:
         return False
+
+
+def _ensure_state_dir(path: Path) -> None:
+    """Create the cache dir 0700 so the mpv IPC socket stays private."""
+    try:
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        mode = path.stat().st_mode & 0o777
+        if mode & 0o077:
+            path.chmod(0o700)
+    except OSError:
+        pass
 
 
 class AnimatedSetter:
@@ -155,12 +167,12 @@ class AnimatedSetter:
         # Size via `wc -c` (POSIX); no GNU `stat -c` / `seq`.
         script = f"""
 set +e
-PARTIAL={partial!s}
-FRAME={frame!s}
+PARTIAL={shlex.quote(str(partial))}
+FRAME={shlex.quote(str(frame))}
 rm -f "$PARTIAL" "$FRAME"
 ffmpeg -hide_banner -loglevel error -nostdin \\
-  -re -stream_loop -1 -i {str(ctx.path)!r} \\
-  -vf {vf!r} -q:v 5 -update 1 "$PARTIAL" &
+  -re -stream_loop -1 -i {shlex.quote(str(ctx.path))} \\
+  -vf {shlex.quote(vf)} -q:v 5 -update 1 "$PARTIAL" &
 FP=$!
 trap 'kill "$FP" 2>/dev/null; wait "$FP" 2>/dev/null; exit 0' EXIT INT TERM
 n=0
@@ -190,7 +202,7 @@ done
 wait "$FP" || true
 """
         try:
-            self._state_dir.mkdir(parents=True, exist_ok=True)
+            _ensure_state_dir(self._state_dir)
             frame.unlink(missing_ok=True)
             with self._log_file.open("w") as log_fh:
                 process = subprocess.Popen(
@@ -250,7 +262,7 @@ wait "$FP" || true
             [*_MPV_WALLPAPER_OPTIONS, f"--input-ipc-server={self._socket}"]
         )
         try:
-            self._state_dir.mkdir(parents=True, exist_ok=True)
+            _ensure_state_dir(self._state_dir)
             self._socket.unlink(missing_ok=True)
             with self._log_file.open("w") as log_fh:
                 process = subprocess.Popen(
@@ -332,7 +344,7 @@ wait "$FP" || true
             self._set_static_underlay(ctx)
         processes: list[subprocess.Popen] = []
         try:
-            self._state_dir.mkdir(parents=True, exist_ok=True)
+            _ensure_state_dir(self._state_dir)
             with self._log_file.open("w") as log_fh:
                 for geometry_args in self._x11_geometry_args():
                     # -ov (override-redirect) keeps tiling WMs (qtile, i3, …)

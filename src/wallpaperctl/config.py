@@ -274,6 +274,14 @@ def load_api_config(
                     toml_path,
                 )
             else:
+                # Holds API keys too: tighten perms like config.sh
+                try:
+                    mode = toml_path.stat().st_mode & 0o777
+                    if mode & 0o077:
+                        toml_path.chmod(0o600)
+                        log.warning("Fixed permissions on %s to 600", toml_path)
+                except OSError:
+                    pass
                 data = tomllib.loads(toml_path.read_text(encoding="utf-8"))
             api = data.get("api", data)
             cfg.unsplash_access_key = api.get("unsplash_access_key", cfg.unsplash_access_key)

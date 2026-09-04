@@ -30,7 +30,7 @@ class WallpaperLock:
                 owner = int(pid_file.read_text().strip())
             except (ValueError, OSError):
                 owner = 0
-            if owner and self._pid_alive(owner):
+            if owner and self._pid_alive(owner) and self._pid_is_ours(owner):
                 print(
                     f"Another wallpaper process is already running (PID {owner}).",
                     file=sys.stderr,
@@ -69,6 +69,13 @@ class WallpaperLock:
             pass
 
     def _rm_lockdir(self) -> None:
+        # Never follow a symlinked lockdir: unlinking children would tear
+        # into whatever directory an attacker pointed the symlink at.
+        try:
+            if self.lockdir.is_symlink() or not self.lockdir.is_dir():
+                return
+        except OSError:
+            return
         try:
             for child in self.lockdir.iterdir():
                 child.unlink(missing_ok=True)  # type: ignore[arg-type]
@@ -102,3 +109,20 @@ class WallpaperLock:
             return True  # exists but not ours
         except OSError:
             return False
+
+    @staticmethod
+    def _pid_is_ours(pid: int) -> bool:
+        """True when pid's executable is a wallpaperctl entry point.
+
+        Guards against a planted pid file blocking runs forever (shared
+        /tmp). Only Linux exposes /proc; elsewhere trust the pid file.
+        """
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                argv0 = f.read().split(b"\x00", 1)[0].decode(
+                    "utf-8", errors="replace"
+                )
+        except (OSError, ValueError):
+            return True
+        exe = argv0.rsplit("/", 1)[-1]
+        return exe in ("wallpaperctl", "wallpaper")

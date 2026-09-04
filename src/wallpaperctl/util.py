@@ -195,14 +195,26 @@ def ensure_debug_logging(enabled: bool) -> None:
     root.setLevel(level)
 
 
+_QUERY_SECRET_RE = re.compile(r"(?i)([?&](?:key|access_key|api_key|token)=)[^&\s\"']+")
+
+
+def redact_url_secrets(msg: str) -> str:
+    """Mask query-string credentials (Pixabay key, tokens) before logging."""
+    return _QUERY_SECRET_RE.sub(r"\1REDACTED", msg)
+
+
 def log_error(msg: str) -> None:
+    msg = redact_url_secrets(msg)
     log.error(msg)
     err_file = home() / ".wallpaper_errors.log"
     try:
         from datetime import datetime
 
         line = f"[{datetime.now():%Y-%m-%d %H:%M:%S}] ERROR: {msg}\n"
-        with err_file.open("a", encoding="utf-8") as f:
+        fd = os.open(
+            err_file, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600
+        )
+        with os.fdopen(fd, "a", encoding="utf-8") as f:
             f.write(line)
     except OSError:
         pass

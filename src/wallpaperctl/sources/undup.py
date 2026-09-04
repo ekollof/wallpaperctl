@@ -25,6 +25,14 @@ KITTY_PREVIEW_MAX_HEIGHT = 420
 KITTY_IMAGE_ID = 42
 
 
+def _contained(p: Path, root: Path) -> bool:
+    """True when p stays inside root (guards delete against symlink surprises)."""
+    try:
+        return p.resolve().is_relative_to(root)
+    except OSError:
+        return False
+
+
 def supports_kitty_graphics() -> bool:
     if hasattr(supports_kitty_graphics, "_cached"):
         return supports_kitty_graphics._cached  # type: ignore[attr-defined]
@@ -239,6 +247,17 @@ def run_undup(
     if confident:
         delete = True
 
+    if delete:
+        print(
+            f"WARNING: delete mode active for {root}."
+            + (
+                " --confident will auto-delete extras without prompting."
+                if confident
+                else ""
+            ),
+            file=sys.stderr,
+        )
+
     kitty = supports_kitty_graphics() and not no_kitty
 
     print(f"Scanning {root} …", file=sys.stderr)
@@ -297,6 +316,9 @@ def run_undup(
                         "deleting extras (keeping first)."
                     )
                     for p in paths[1:]:
+                        if not _contained(p, root):
+                            print(f"  Skipped (outside scan root): {p}", file=sys.stderr)
+                            continue
                         try:
                             p.unlink()
                             print(f"  Deleted {p}")
@@ -323,6 +345,9 @@ def run_undup(
                     pass
                 elif choice == "1":
                     for p in paths[1:]:
+                        if not _contained(p, root):
+                            print(f"  Skipped (outside scan root): {p}", file=sys.stderr)
+                            continue
                         p.unlink(missing_ok=True)
                         print(f"  Deleted {p}")
                 else:
@@ -330,6 +355,12 @@ def run_undup(
                         keep_idx = int(choice) - 1
                         for i, p in enumerate(paths):
                             if i != keep_idx:
+                                if not _contained(p, root):
+                                    print(
+                                        f"  Skipped (outside scan root): {p}",
+                                        file=sys.stderr,
+                                    )
+                                    continue
                                 p.unlink(missing_ok=True)
                                 print(f"  Deleted {p}")
                     except (ValueError, IndexError):

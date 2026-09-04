@@ -211,8 +211,9 @@ def restore_monitor_transforms(snapshot: list[tuple[str, int]]) -> bool:
         if time.monotonic() >= deadline:
             return last_ok
         for name, transform in pending:
+            escaped_name = name.replace("\\", "\\\\").replace('"', '\\"')
             last_ok = _hypr_eval(
-                f'hl.monitor({{ output = "{name}", transform = {transform} }})'
+                f'hl.monitor({{ output = "{escaped_name}", transform = {transform} }})'
             )
             # Touch digitizer transform must match the panel (autorotate.py).
             for touch in _touch_device_names():
