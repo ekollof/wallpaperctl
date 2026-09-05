@@ -12,8 +12,10 @@ web-content ``prefers-color-scheme`` reliably.
 
 Running browsers pick changes up live via ``--refresh-platform-policy``.
 The policy directories live under /etc and are created once by
-``wallpaperctl setup browser-policies`` (sudo/doas/pkexec). Omarchy
-manages its own browser policies, so this op disables itself there.
+``wallpaperctl setup browser-policies`` (sudo/doas/pkexec). On Omarchy this
+op stays out of the way: omarchy-theme-set-browser owns the same policies,
+and the Omarchy theme op (theme/omarchy.py) re-runs it after each palette
+retint so wallpaper changes re-tint browser chrome too.
 """
 
 from __future__ import annotations
@@ -59,7 +61,8 @@ class BrowserPolicyOp:
     def enabled(self, ctx: WallpaperContext) -> bool:
         if not ctx.ops.enable_browser_policy:
             return False
-        # omarchy-theme-set-browser owns the same policies there.
+        # omarchy-theme-set-browser owns the same policies there; the omarchy
+        # theme op re-runs it after each palette retint (theme/omarchy.py).
         if ctx.de.omarchy:
             return False
         return True

@@ -442,22 +442,263 @@ def test_op_run_skips_compositor_reload_when_templates_work(monkeypatch, tmp_pat
     ):
         assert OmarchyThemeOp().run(_ctx(tmp_path))
     assert ["omarchy-theme-set-templates"] in runs
-    assert not any(c[:1] == ["hyprctl"] and c[1] == "eval" for c in runs)
+    # borders go through omarchy's hl.config bridge, never a compositor reload
+    assert any(c[:2] == ["hyprctl", "eval"] and "hl.config(" in c[2] for c in runs)
+    assert not any(c[:2] == ["hyprctl", "reload"] for c in runs)
     assert ["omarchy-restart-hyprctl"] not in runs
     assert ["omarchy-hook", "theme-set", THEME_SLUG] not in runs
     assert ["omarchy-restart-terminal"] in runs
 
 
-def test_hypr_keywords_from_mapping():
+def test_op_run_refreshes_browser_policy_after_retint(monkeypatch, tmp_path):
+    """Retint regenerates chromium.theme; omarchy-theme-set-browser must follow."""
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+    runs: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        runs.append(list(args))
+        if list(args)[:1] == ["omarchy-theme-set-templates"]:
+            nxt = tmp_path / ".local" / "state" / "omarchy" / "current" / "next-theme"
+            nxt.mkdir(parents=True, exist_ok=True)
+            (nxt / "kitty.conf").write_text("x\n", encoding="utf-8")
+        return type("R", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
+
+    with (
+        patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
+        patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.theme.omarchy.have", return_value=True),
+        patch("wallpaperctl.theme.omarchy.run", side_effect=fake_run),
+    ):
+        assert OmarchyThemeOp().run(_ctx(tmp_path))
+
+    assert ["omarchy-theme-set-browser"] in runs
+
+
+def test_op_run_syncs_opencode_theme_after_retint(monkeypatch, tmp_path):
+    """Retint regenerates opencode.json; omarchy-theme-set-opencode must copy it."""
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+    runs: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        runs.append(list(args))
+        if list(args)[:1] == ["omarchy-theme-set-templates"]:
+            nxt = tmp_path / ".local" / "state" / "omarchy" / "current" / "next-theme"
+            nxt.mkdir(parents=True, exist_ok=True)
+            (nxt / "kitty.conf").write_text("x\n", encoding="utf-8")
+        return type("R", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
+
+    with (
+        patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
+        patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.theme.omarchy.have", return_value=True),
+        patch("wallpaperctl.theme.omarchy.run", side_effect=fake_run),
+    ):
+        assert OmarchyThemeOp().run(_ctx(tmp_path))
+
+    assert ["omarchy-theme-set-opencode"] in runs
+
+
+def test_op_run_opencode_sync_disabled(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+    runs: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        runs.append(list(args))
+        if list(args)[:1] == ["omarchy-theme-set-templates"]:
+            nxt = tmp_path / ".local" / "state" / "omarchy" / "current" / "next-theme"
+            nxt.mkdir(parents=True, exist_ok=True)
+            (nxt / "kitty.conf").write_text("x\n", encoding="utf-8")
+        return type("R", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
+
+    with (
+        patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
+        patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.theme.omarchy.have", return_value=True),
+        patch("wallpaperctl.theme.omarchy.run", side_effect=fake_run),
+    ):
+        ctx = _ctx(tmp_path)
+        ctx.ops.omarchy_refresh_opencode = False
+        assert OmarchyThemeOp().run(ctx)
+
+    assert ["omarchy-theme-set-templates"] in runs
+    assert ["omarchy-theme-set-opencode"] not in runs
+
+
+def test_op_run_opencode_sync_failure_is_soft(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+
+    def fake_run(args, **kwargs):
+        if list(args)[:1] == ["omarchy-theme-set-templates"]:
+            nxt = tmp_path / ".local" / "state" / "omarchy" / "current" / "next-theme"
+            nxt.mkdir(parents=True, exist_ok=True)
+            (nxt / "kitty.conf").write_text("x\n", encoding="utf-8")
+        rc = 1 if list(args)[:1] == ["omarchy-theme-set-opencode"] else 0
+        return type("R", (), {"returncode": rc, "stdout": "", "stderr": "boom"})()
+
+    with (
+        patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
+        patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.theme.omarchy.have", return_value=True),
+        patch("wallpaperctl.theme.omarchy.run", side_effect=fake_run),
+    ):
+        assert OmarchyThemeOp().run(_ctx(tmp_path))
+
+
+def test_op_run_skips_browser_policy_when_retint_fails(monkeypatch, tmp_path):
+    """No fresh chromium.theme → stale policy repaint would be worse than none."""
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+    runs: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        runs.append(list(args))
+        rc = 1 if list(args)[:1] == ["omarchy-theme-set-templates"] else 0
+        return type("R", (), {"returncode": rc, "stdout": "", "stderr": "boom"})()
+
+    with (
+        patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
+        patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.theme.omarchy.have", return_value=True),
+        patch("wallpaperctl.theme.omarchy.run", side_effect=fake_run),
+    ):
+        assert OmarchyThemeOp().run(_ctx(tmp_path))
+
+    assert ["omarchy-theme-set-templates"] in runs
+    assert ["omarchy-theme-set-browser"] not in runs
+
+
+def test_op_run_browser_policy_refresh_disabled(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+    runs: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        runs.append(list(args))
+        if list(args)[:1] == ["omarchy-theme-set-templates"]:
+            nxt = tmp_path / ".local" / "state" / "omarchy" / "current" / "next-theme"
+            nxt.mkdir(parents=True, exist_ok=True)
+            (nxt / "kitty.conf").write_text("x\n", encoding="utf-8")
+        return type("R", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
+
+    with (
+        patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
+        patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.theme.omarchy.have", return_value=True),
+        patch("wallpaperctl.theme.omarchy.run", side_effect=fake_run),
+    ):
+        ctx = _ctx(tmp_path)
+        ctx.ops.omarchy_refresh_browser = False
+        assert OmarchyThemeOp().run(ctx)
+
+    assert ["omarchy-theme-set-templates"] in runs
+    assert ["omarchy-theme-set-browser"] not in runs
+
+
+def test_op_run_browser_policy_unchanged_palette_skipped(monkeypatch, tmp_path):
+    """Same wallpaper → no retint → no browser policy churn (sudo/pkexec noise)."""
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+    runs: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        runs.append(list(args))
+        if list(args)[:1] == ["omarchy-theme-set-templates"]:
+            nxt = tmp_path / ".local" / "state" / "omarchy" / "current" / "next-theme"
+            nxt.mkdir(parents=True, exist_ok=True)
+            (nxt / "kitty.conf").write_text("x\n", encoding="utf-8")
+        return type("R", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
+
+    with (
+        patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
+        patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.theme.omarchy.have", return_value=True),
+        patch("wallpaperctl.theme.omarchy.run", side_effect=fake_run),
+    ):
+        op = OmarchyThemeOp()
+        ctx = _ctx(tmp_path)
+        assert op.run(ctx)
+        runs.clear()
+        assert op.run(ctx)
+
+    assert ["omarchy-theme-set-browser"] not in runs
+
+
+def test_op_run_browser_refresh_failure_is_soft(monkeypatch, tmp_path):
+    """A failing omarchy-theme-set-browser must not fail the theme op."""
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+
+    def fake_run(args, **kwargs):
+        if list(args)[:1] == ["omarchy-theme-set-templates"]:
+            nxt = tmp_path / ".local" / "state" / "omarchy" / "current" / "next-theme"
+            nxt.mkdir(parents=True, exist_ok=True)
+            (nxt / "kitty.conf").write_text("x\n", encoding="utf-8")
+        rc = 1 if list(args)[:1] == ["omarchy-theme-set-browser"] else 0
+        return type("R", (), {"returncode": rc, "stdout": "", "stderr": "denied"})()
+
+    with (
+        patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
+        patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.theme.omarchy.have", return_value=True),
+        patch("wallpaperctl.theme.omarchy.run", side_effect=fake_run),
+    ):
+        assert OmarchyThemeOp().run(_ctx(tmp_path))
+
+
+def test_hl_config_expr_from_mapping():
     mapping = {
         "hyprland_active_border": "rgba(804c49ee) rgba(877485ee) 45deg",
-        "hyprland_inactive_border": "rgba(595959aa)",
     }
-    pairs = dict(tom._hypr_keywords_from_mapping(mapping))
-    assert pairs["general:col.active_border"] == "rgba(804c49ee) rgba(877485ee) 45deg"
-    assert pairs["group:col.border_active"] == "rgba(804c49ee) rgba(877485ee) 45deg"
-    assert pairs["general:col.inactive_border"] == "rgba(595959aa)"
-    assert pairs["group:col.border_inactive"] == "rgba(595959aa)"
+    expr = tom._hl_config_expr(mapping)
+    assert expr is not None
+    assert expr.startswith("hl.config({")
+    assert expr.endswith("})")
+    # general + group mirror omarchy's generated hyprland.lua
+    assert '"general"' not in expr  # keys are bare lua identifiers
+    for key in (
+        "general = { col = { active_border = { colors = {"
+        ' "rgba(804c49ee)", "rgba(877485ee)" }, angle = 45 }',
+        "inactive_border = \"rgba(595959aa)\"",
+        "group = { col = { border_active =",
+        "border_inactive =",
+    ):
+        assert key in expr, expr
+
+
+def test_hl_border_single_color_stays_plain_string():
+    # omarchy's hypr_gradient_value: one color → quoted string, angle dropped
+    assert tom._hl_border("rgba(595959aa)") == "rgba(595959aa)"
+    assert tom._hl_border("rgb(1e1e1e) 45deg") == "rgb(1e1e1e)"
+    # two colors without an angle → colors table only
+    assert tom._hl_border("rgba(aaaaaaee) rgba(bbbbbbee)") == {
+        "colors": ["rgba(aaaaaaee)", "rgba(bbbbbbee)"]
+    }
+    # empty spec → returned untouched (rendered as a quoted string)
+    assert tom._hl_border("") == ""
+
+
+def test_apply_hypr_borders_uses_eval_hl_config(monkeypatch, tmp_path):
+    """hyprctl keyword can't parse gradients on Hyprland 0.56+; omarchy's
+    hl.config bridge (hyprctl eval) is the sanctioned path."""
+    runs: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        runs.append(list(args))
+        return type("R", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
+
+    monkeypatch.setattr(tom, "have", lambda cmd: cmd == "hyprctl")
+    monkeypatch.setattr(tom, "run", fake_run)
+    tom._apply_hypr_borders(
+        {"hyprland_active_border": "rgba(804c49ee) rgba(877485ee) 45deg"}
+    )
+    assert len(runs) == 1
+    assert runs[0][:2] == ["hyprctl", "eval"]
+    assert "hl.config(" in runs[0][2]
+    assert "active_border" in runs[0][2]
 
 
 def test_retint_updates_kitty_but_does_not_write_hyprland_lua(
@@ -505,12 +746,12 @@ def test_retint_updates_kitty_but_does_not_write_hyprland_lua(
     assert (current / "hyprland.lua").read_text(encoding="utf-8") == "-- keep\n"
     assert (current / "gum_env.lua").read_text(encoding="utf-8") == "-- keep gum\n"
     assert (current / "alacritty.toml").read_text(encoding="utf-8") == "# stale\n"
-    assert any(
-        c[:3] == ["hyprctl", "keyword", "general:col.active_border"] for c in runs
-    )
+    border_calls = [c for c in runs if c[:2] == ["hyprctl", "eval"]]
+    assert border_calls and "hl.config(" in border_calls[0][2]
     assert ["omarchy-restart-terminal"] in runs
     assert ["omarchy-restart-hyprctl"] not in runs
     assert not any(c[:1] == ["omarchy-hook"] for c in runs)
+    assert not any(c[:2] == ["hyprctl", "reload"] for c in runs)
 
 
 def test_op_run_never_falls_back_to_theme_set(monkeypatch, tmp_path):
@@ -1091,7 +1332,10 @@ def test_op_run_does_not_re_signal_opencode(monkeypatch, tmp_path):
         assert OmarchyThemeOp().run(_ctx(tmp_path))
 
     assert not any("pkill" in (c[0] if c else "") for c in runs)
-    assert not any("opencode" in " ".join(c) for c in runs)
+    # The only opencode interaction allowed is omarchy's own file-watch based
+    # sync — never direct signalling (SIGUSR2 double-flashes TUIs).
+    opencode_runs = [c for c in runs if "opencode" in " ".join(c)]
+    assert opencode_runs == [["omarchy-theme-set-opencode"]]
     assert ["omarchy-restart-opencode"] not in runs
 
 

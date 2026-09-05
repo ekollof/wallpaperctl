@@ -3,7 +3,9 @@
 Maps the wallust palette onto the persistent "Dynamic Wallpapers" theme
 (colors.toml), keeps backgrounds/ and wallpaper-video staging in sync, then
 retints the running session the same way a video-capable Omarchy theme does:
-live shell palette, Kitty SIGUSR1, Hyprland border ``keyword``s.
+live shell palette, Kitty SIGUSR1, Hyprland border ``keyword``s — then has
+``omarchy-theme-set-browser`` re-tint Chromium-family browser chrome from the
+regenerated theme (omarchy theme set would do the same on a full switch).
 
 Wallpaper changes are not theme switches. Do not run ``omarchy theme set`` /
 ``theme refresh`` (that ``hyprctl reload``s and snaps autorotation). Screen
@@ -16,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -338,26 +341,119 @@ def _install_generated_into_current() -> bool:
         return False
 
 
-def _hypr_keywords_from_mapping(mapping: dict[str, str]) -> list[tuple[str, str]]:
-    """Border ``hyprctl keyword`` pairs from the wallust→Omarchy color mapping."""
-    pairs: list[tuple[str, str]] = []
+_GRADIENT_ANGLE_RE = re.compile(r"^-?\d+(?:\.\d+)?deg$")
+
+
+def _parse_gradient(spec: str) -> tuple[list[str], str | None]:
+    """Split a gradient spec into colors and an optional angle.
+
+    Mirrors ``parse_gradient`` in omarchy-theme-set-templates: whitespace
+    separated, parts matching ``<number>deg`` are the angle, the rest are
+    colors ("rgba(6e747aee) rgba(788b92ee) 45deg").
+    """
+    colors: list[str] = []
+    angle: str | None = None
+    for part in (spec or "").split():
+        if _GRADIENT_ANGLE_RE.match(part):
+            angle = part[:-3]
+        else:
+            colors.append(part)
+    return colors, angle
+
+
+def _lua_value(value: object) -> str:
+    """Render a Python scalar/list/dict as a hyprlang-lua value."""
+    if isinstance(value, str):
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, dict):
+        inner = ", ".join(f"{k} = {_lua_value(v)}" for k, v in value.items())
+        return f"{{ {inner} }}"
+    if isinstance(value, (list, tuple)):
+        inner = ", ".join(_lua_value(v) for v in value)
+        return f"{{ {inner} }}"
+    return str(value)
+
+
+def _hl_border(spec: str) -> str | dict:
+    """Border value in omarchy's ``hypr_gradient`` template form.
+
+    Same rules as ``hypr_gradient_value`` in omarchy-theme-set-templates:
+    a single color is a plain string; two or more colors become a
+    ``{ colors = { .. }, angle = .. }`` table, with the angle included only
+    when the spec carries one.
+    """
+    colors, angle = _parse_gradient(spec)
+    if not colors:
+        return spec
+    if len(colors) == 1:
+        return colors[0]
+    if angle is not None:
+        try:
+            degrees = float(angle)
+        except ValueError:
+            return {"colors": colors}
+        # omarchy writes whole angles as plain integers (angle = 45)
+        return {"colors": colors, "angle": int(degrees) if degrees.is_integer() else degrees}
+    return {"colors": colors}
+
+
+def _hl_config_expr(mapping: dict[str, str]) -> str | None:
+    """``hl.config({...})`` applying omarchy's border keys, or None.
+
+    Same keys omarchy's generated hyprland.lua writes: general.col and
+    group.col border colors. Applied live via ``hyprctl eval`` (the same
+    lua API omarchy-hyprland-reload-guard uses) — no compositor reload and
+    no hyprland.lua write.
+    """
     active = (mapping.get("hyprland_active_border") or "").strip()
+    if not active:
+        return None
     inactive = (mapping.get("hyprland_inactive_border") or "rgba(595959aa)").strip()
-    if active:
-        pairs.append(("general:col.active_border", active))
-        pairs.append(("group:col.border_active", active))
-    if inactive:
-        pairs.append(("general:col.inactive_border", inactive))
-        pairs.append(("group:col.border_inactive", inactive))
-    return pairs
+    active_val = _hl_border(active)
+    inactive_val = _hl_border(inactive)
+    table = _lua_value(
+        {
+            "general": {
+                "col": {
+                    "active_border": active_val,
+                    "inactive_border": inactive_val,
+                },
+            },
+            "group": {
+                "col": {
+                    "border_active": active_val,
+                    "border_inactive": inactive_val,
+                },
+            },
+        }
+    )
+    return f"hl.config({table})"
 
 
 def _apply_hypr_borders(mapping: dict[str, str]) -> None:
-    """Live border colors via ``hyprctl keyword`` — does not write hyprland.lua."""
+    """Live border colors via omarchy's hl.config lua API (``hyprctl eval``).
+
+    ``hyprctl keyword`` cannot parse gradient values on Hyprland 0.56+
+    ("keyword can't work with non-legacy parsers"), which left borders on the
+    previous theme's colors after every wallpaper change. ``hl.config`` is
+    omarchy's own lua config bridge, used the same way by
+    omarchy-hyprland-reload-guard; it applies without a compositor reload and
+    without writing hyprland.lua.
+    """
     if not have("hyprctl"):
         return
-    for option, value in _hypr_keywords_from_mapping(mapping):
-        run(["hyprctl", "keyword", option, value], timeout=5)
+    expr = _hl_config_expr(mapping)
+    if not expr:
+        return
+    r = run(["hyprctl", "eval", expr], timeout=5)
+    if r.returncode != 0 or "ok" not in (r.stdout or "").lower():
+        log.debug(
+            "hyprctl eval hl.config failed: %s",
+            (r.stderr or r.stdout or "")[:160],
+        )
 
 
 def retint_without_compositor_reload(
@@ -365,7 +461,7 @@ def retint_without_compositor_reload(
     slug: str,
     mapping: dict[str, str] | None = None,
 ) -> bool:
-    """Render Kitty (etc.) from wallust colors; retint Hypr borders via keyword."""
+    """Render Kitty (etc.) from wallust colors; retint Hypr borders via hl.config."""
     del slug  # kept so callers stay (theme_dir, slug)
     if not have("omarchy-theme-set-templates"):
         return False
@@ -389,6 +485,58 @@ def retint_without_compositor_reload(
     for cmd in _RETINT_COMMANDS:
         if have(cmd):
             run([cmd], timeout=20)
+    return True
+
+
+def refresh_browser_policy(ctx: WallpaperContext) -> bool:
+    """Re-tint Chromium-family browser chrome from the freshly rendered theme.
+
+    The retint above regenerates ``current/theme/chromium.theme``;
+    omarchy's own helper turns that into the privileged managed policies
+    (``/etc/*/policies/managed/color.json``, passwordless via the Omarchy
+    sudoers rule) and refreshes running browsers via
+    ``--refresh-platform-policy``. Omarchy owns those policies, so this is the
+    only path that touches browser chrome — never BrowserPolicyOp.
+
+    Soft-fails when the helper is missing or exits non-zero (e.g. no browser
+    installed, or a non-stock install without the sudoers grant).
+    """
+    if not have("omarchy-theme-set-browser"):
+        return False
+    r = run(["omarchy-theme-set-browser"], timeout=30, env=omarchy_env())
+    if r.returncode != 0:
+        debug_op(
+            "omarchy",
+            "omarchy-theme-set-browser failed: "
+            f"{(r.stderr or r.stdout or '').strip()[:200]}",
+            ctx,
+        )
+        return False
+    return True
+
+
+def sync_opencode_theme(ctx: WallpaperContext) -> bool:
+    """Refresh opencode colors from the freshly rendered theme.
+
+    The retint regenerates ``current/theme/opencode.json``;
+    omarchy-theme-set-opencode copies it to
+    ``~/.config/opencode/themes/omarchy.json`` where omarchy's own TUI plugin
+    watches it and retints running sessions. Called without ``--activate``:
+    plugin installation and the tui.json theme selection stay omarchy
+    theme-set territory (and _heal_opencode stays authoritative for
+    de-theming).
+    """
+    if not have("omarchy-theme-set-opencode"):
+        return False
+    r = run(["omarchy-theme-set-opencode"], timeout=15, env=omarchy_env())
+    if r.returncode != 0:
+        debug_op(
+            "omarchy",
+            "omarchy-theme-set-opencode failed: "
+            f"{(r.stderr or r.stdout or '').strip()[:200]}",
+            ctx,
+        )
+        return False
     return True
 
 
@@ -503,6 +651,32 @@ class OmarchyThemeOp:
             suppress_layout_rebind(8.0)
             if retint_without_compositor_reload(theme_dir, slug, mapping):
                 debug_op(self.name, "kitty/hypr retinted from wallust palette", ctx)
+                if getattr(ctx.ops, "omarchy_refresh_opencode", True):
+                    if sync_opencode_theme(ctx):
+                        debug_op(
+                            self.name,
+                            "opencode theme synced (omarchy-theme-set-opencode)",
+                            ctx,
+                        )
+                else:
+                    debug_op(
+                        self.name,
+                        "omarchy_refresh_opencode disabled; opencode theme untouched",
+                        ctx,
+                    )
+                if getattr(ctx.ops, "omarchy_refresh_browser", True):
+                    if refresh_browser_policy(ctx):
+                        debug_op(
+                            self.name,
+                            "browser chrome re-tinted (omarchy-theme-set-browser)",
+                            ctx,
+                        )
+                else:
+                    debug_op(
+                        self.name,
+                        "omarchy_refresh_browser disabled; browser policy untouched",
+                        ctx,
+                    )
             else:
                 debug_op(
                     self.name,

@@ -69,6 +69,8 @@ wallpaper_dir = "~/Wallpapers"
 # omarchy_accent_strategy = "warmest"         # palette strategy for colors.toml accent
 # omarchy_timeout = 60                        # omarchy theme refresh budget (seconds; runner adds slack)
 # omarchy_refresh_apps = true                 # false = stage colors.toml only, no app retint
+# omarchy_refresh_browser = true              # false = leave browser chrome to manual theme switches
+# omarchy_refresh_opencode = true             # false = leave opencode theme to manual theme switches
 
 # Chromium-family browser tint via managed policies (see theme/browser.py)
 # browser_color_scheme = "dark"               # dark | light | device

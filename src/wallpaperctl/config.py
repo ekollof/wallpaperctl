@@ -82,6 +82,14 @@ class OpsConfig:
     # After wallust, retint Kitty + Hypr borders from the Dynamic Wallpapers
     # colors.toml. Off: only stage colors.toml (no live app retint).
     omarchy_refresh_apps: bool = True
+    # After a successful retint, re-run omarchy-theme-set-browser so the
+    # Chromium-family managed policies and running browsers follow the new
+    # palette (Omarchy owns those policies; see theme/browser.py).
+    omarchy_refresh_browser: bool = True
+    # After a successful retint, re-run omarchy-theme-set-opencode so
+    # ~/.config/opencode/themes/omarchy.json follows the palette and omarchy's
+    # TUI plugin retints running sessions.
+    omarchy_refresh_opencode: bool = True
     # Skip live retint when the rendered palette is unchanged (e.g. -R).
     omarchy_skip_unchanged: bool = True
     cde_restart_dtwm: bool = True

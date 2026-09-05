@@ -33,7 +33,7 @@ log = logging.getLogger("wallpaperctl")
 THEME_OPS = [
     WallustOp(),
     OmarchyThemeOp(),  # needs wallust colors; Dynamic Wallpapers omarchy theme retint
-    BrowserPolicyOp(),  # needs wallust colors; Brave/Chromium policy tint (Omarchy skipped)
+    BrowserPolicyOp(),  # needs wallust colors; Brave/Chromium policy tint (Omarchy: via omarchy op)
     CosmicThemeOp(),  # needs wallust colors; COSMIC v2 hex accent files
     PywalfoxOp(),  # contrast-boost colors.json + pywalfox update
     XresourcesOp(),
