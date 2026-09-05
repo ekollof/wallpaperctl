@@ -20,6 +20,7 @@ import logging
 import os
 import re
 import shutil
+import time
 from pathlib import Path
 
 from wallpaperctl.context import WallpaperContext
@@ -35,7 +36,7 @@ from wallpaperctl.omarchy import (
 from wallpaperctl.theme.base import debug_op
 from wallpaperctl.theme.cosmic import pick_accent
 from wallpaperctl.theme.pywalfox import load_colors_json
-from wallpaperctl.util import have, hex_to_rgb, home, run
+from wallpaperctl.util import have, hex_to_rgb, home, pgrep_exact, run
 
 log = logging.getLogger("wallpaperctl")
 
@@ -515,6 +516,76 @@ def refresh_browser_policy(ctx: WallpaperContext) -> bool:
     return True
 
 
+_OPENCODE_APPLY_GRACE_S = 1.2
+
+
+def _opencode_themes_dir() -> Path:
+    """~/.config/opencode/themes with the plugin's env fallback semantics.
+
+    Mirrors themesDir() in omarchy's omarchy-theme TUI plugin (and the
+    ``${VAR:-...}`` defaults in omarchy-theme-set-opencode): truthy
+    OPENCODE_CONFIG_DIR wins, else XDG_CONFIG_HOME, else ~/.config.
+    """
+    config = os.environ.get("OPENCODE_CONFIG_DIR")
+    if not config:
+        xdg = os.environ.get("XDG_CONFIG_HOME")
+        base = Path(xdg) if xdg else home() / ".config"
+        config = str(base / "opencode")
+    return Path(config) / "themes"
+
+
+def _opencode_theme_hash(text: str) -> str:
+    """FNV-1a(32) over UTF-16 code units — omarchy's TUI plugin contentHash.
+
+    The plugin installs each palette as ``omarchy-<hash>.json``; a missing
+    hash file means no running session applied the current omarchy.json yet.
+    Unit-wise (not byte-wise) hashing matches JS ``charCodeAt`` for non-ASCII.
+    """
+    data = text.encode("utf-16-le")
+    h = 0x811C9DC5
+    for i in range(0, len(data), 2):
+        h ^= data[i] | (data[i + 1] << 8)
+        h = (h * 0x01000193) & 0xFFFFFFFF
+    return f"{h:08x}"
+
+
+def _opencode_applied(themes_dir: Path, text: str) -> bool:
+    expected = f"omarchy-{_opencode_theme_hash(text)}.json"
+    try:
+        return any(entry.name == expected for entry in themes_dir.glob("omarchy-*.json"))
+    except OSError:
+        return False
+
+
+def _nudge_opencode_watchers(ctx: WallpaperContext) -> None:
+    """Re-fire omarchy's theme watcher when no session applied the palette.
+
+    opencode (Bun) occasionally misses the rename event behind
+    omarchy-theme-set-opencode's atomic replace, leaving running sessions on
+    the previous palette until the next change. Rewriting the same bytes is
+    another plain fs event: every watcher re-applies, installs its
+    content-hashed copy and prunes stale ones. No signals involved.
+    """
+    themes_dir = _opencode_themes_dir()
+    path = themes_dir / "omarchy.json"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    if _opencode_applied(themes_dir, text):
+        return
+    tmp = themes_dir / f".omarchy.json.nudge-{os.getpid()}"
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError as e:
+        debug_op("omarchy", f"opencode watcher nudge failed: {e}", ctx)
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def sync_opencode_theme(ctx: WallpaperContext) -> bool:
     """Refresh opencode colors from the freshly rendered theme.
 
@@ -525,6 +596,10 @@ def sync_opencode_theme(ctx: WallpaperContext) -> bool:
     plugin installation and the tui.json theme selection stay omarchy
     theme-set territory (and _heal_opencode stays authoritative for
     de-theming).
+
+    While opencode is running, the plugin's apply is verified via its
+    content-hashed install; a missed fs event gets one same-bytes rewrite to
+    re-fire the watchers.
     """
     if not have("omarchy-theme-set-opencode"):
         return False
@@ -537,6 +612,23 @@ def sync_opencode_theme(ctx: WallpaperContext) -> bool:
             ctx,
         )
         return False
+    if not pgrep_exact("opencode"):
+        return True
+    # The watcher debounces 250ms and installs asynchronously; give it a beat
+    # before judging whether the palette reached the running session(s).
+    time.sleep(_OPENCODE_APPLY_GRACE_S)
+    _nudge_opencode_watchers(ctx)
+    time.sleep(_OPENCODE_APPLY_GRACE_S)
+    themes_dir = _opencode_themes_dir()
+    try:
+        text = (themes_dir / "omarchy.json").read_text(encoding="utf-8")
+    except OSError:
+        return True
+    if _opencode_applied(themes_dir, text):
+        debug_op("omarchy", "opencode session(s) applied the palette", ctx)
+    else:
+        # Sessions may legitimately opt out (theme != omarchy*) — debug only.
+        debug_op("omarchy", "no omarchy-<hash> install after sync/nudge", ctx)
     return True
 
 

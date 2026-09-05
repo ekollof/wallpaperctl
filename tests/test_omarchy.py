@@ -57,6 +57,10 @@ def _no_real_process_signals(monkeypatch):
         "wallpaperctl.theme.omarchy.have",
         lambda cmd: False,
     )
+    # a live opencode session on the dev machine must not stretch test runs
+    monkeypatch.setattr(
+        "wallpaperctl.theme.omarchy.pgrep_exact", lambda name: False
+    )
     monkeypatch.setattr("time.sleep", lambda seconds: None)
 
 # ── helpers / state ──────────────────────────────────────────────────────
@@ -546,6 +550,120 @@ def test_op_run_opencode_sync_failure_is_soft(monkeypatch, tmp_path):
         patch("wallpaperctl.theme.omarchy.run", side_effect=fake_run),
     ):
         assert OmarchyThemeOp().run(_ctx(tmp_path))
+
+
+# ── opencode watcher nudge ───────────────────────────────────────────────
+
+
+def test_opencode_theme_hash_matches_plugin():
+    # FNV-1a over UTF-16 units, like contentHash in omarchy's TUI plugin;
+    # cross-checked against a live plugin install (omarchy-cc6ae012.json).
+    assert tom._opencode_theme_hash("hello") == "4f9f2cab"
+    assert (
+        tom._opencode_theme_hash(
+            '{"$schema": "https://opencode.ai/theme.json", "theme": {"accent": "#ff0000"}}'
+        )
+        == "a9524c2c"
+    )
+
+
+def test_opencode_themes_dir_env_fallbacks(monkeypatch, tmp_path):
+    monkeypatch.setenv("OPENCODE_CONFIG_DIR", str(tmp_path / "a"))
+    assert tom._opencode_themes_dir() == tmp_path / "a" / "themes"
+    monkeypatch.delenv("OPENCODE_CONFIG_DIR")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "b"))
+    assert tom._opencode_themes_dir() == tmp_path / "b" / "opencode" / "themes"
+    monkeypatch.delenv("XDG_CONFIG_HOME")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert tom._opencode_themes_dir() == tmp_path / ".config" / "opencode" / "themes"
+
+
+def test_nudge_rewrites_when_no_session_applied(monkeypatch, tmp_path):
+    themes = tmp_path / "themes"
+    themes.mkdir()
+    path = themes / "omarchy.json"
+    path.write_text('{"theme": {}}', encoding="utf-8")
+    replaces: list[tuple[Path, Path]] = []
+    monkeypatch.setattr(tom.os, "replace", lambda src, dst: replaces.append((src, dst)))
+    monkeypatch.setattr(tom, "_opencode_themes_dir", lambda: themes)
+
+    ctx = _ctx(tmp_path)
+    tom._nudge_opencode_watchers(ctx)
+
+    assert len(replaces) == 1
+    src, dst = replaces[0]
+    assert dst == path
+    assert path.read_text(encoding="utf-8") == '{"theme": {}}'
+
+
+def test_nudge_skips_when_session_applied(monkeypatch, tmp_path):
+    themes = tmp_path / "themes"
+    themes.mkdir()
+    text = '{"theme": {}}'
+    path = themes / "omarchy.json"
+    path.write_text(text, encoding="utf-8")
+    (themes / f"omarchy-{tom._opencode_theme_hash(text)}.json").write_text(
+        text, encoding="utf-8"
+    )
+    monkeypatch.setattr(tom, "_opencode_themes_dir", lambda: themes)
+    monkeypatch.setattr(
+        tom.os, "replace", lambda *a: (_ for _ in ()).throw(AssertionError("no nudge"))
+    )
+
+    tom._nudge_opencode_watchers(_ctx(tmp_path))
+
+
+def test_op_run_opencode_sync_nudges_missed_watchers(monkeypatch, tmp_path):
+    """opencode running + no hash install after sync → one re-fire nudge."""
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+    themes = tmp_path / ".config" / "opencode" / "themes"
+    themes.mkdir(parents=True)
+    (themes / "omarchy.json").write_text('{"theme": {}}', encoding="utf-8")
+    nudged: list[bool] = []
+
+    def fake_run(args, **kwargs):
+        if list(args)[:1] == ["omarchy-theme-set-templates"]:
+            nxt = tmp_path / ".local" / "state" / "omarchy" / "current" / "next-theme"
+            nxt.mkdir(parents=True, exist_ok=True)
+            (nxt / "kitty.conf").write_text("x\n", encoding="utf-8")
+        return type("R", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
+
+    with (
+        patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
+        patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.theme.omarchy.have", return_value=True),
+        patch("wallpaperctl.theme.omarchy.run", side_effect=fake_run),
+        patch("wallpaperctl.theme.omarchy.pgrep_exact", return_value=True),
+        patch("wallpaperctl.theme.omarchy.time.sleep"),
+        patch.object(tom, "_nudge_opencode_watchers", side_effect=lambda ctx: nudged.append(True)),
+    ):
+        assert OmarchyThemeOp().run(_ctx(tmp_path))
+
+    assert nudged == [True]
+
+
+def test_op_run_opencode_sync_skips_nudge_without_opencode(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+
+    def fake_run(args, **kwargs):
+        if list(args)[:1] == ["omarchy-theme-set-templates"]:
+            nxt = tmp_path / ".local" / "state" / "omarchy" / "current" / "next-theme"
+            nxt.mkdir(parents=True, exist_ok=True)
+            (nxt / "kitty.conf").write_text("x\n", encoding="utf-8")
+        return type("R", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
+
+    with (
+        patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
+        patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.theme.omarchy.have", return_value=True),
+        patch("wallpaperctl.theme.omarchy.run", side_effect=fake_run),
+        patch.object(tom, "_nudge_opencode_watchers") as nudge,
+    ):
+        assert OmarchyThemeOp().run(_ctx(tmp_path))
+
+    nudge.assert_not_called()
 
 
 def test_op_run_skips_browser_policy_when_retint_fails(monkeypatch, tmp_path):
