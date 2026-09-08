@@ -82,7 +82,7 @@ class AnimatedSetter:
             return False
         # These desktops own the wallpaper surface; the extracted still is
         # applied by their native setter instead of an overlay player.
-        if ctx.de.cosmic or ctx.de.noctalia:
+        if ctx.de.cosmic or ctx.de.noctalia or ctx.de.omarchy:
             return False
         if os.environ.get("WAYLAND_DISPLAY") and (ctx.de.xfce or ctx.de.cinnamon):
             return False

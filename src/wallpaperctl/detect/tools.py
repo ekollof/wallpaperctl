@@ -96,11 +96,33 @@ def detect_tools(de: DesktopEnvironment, *, strict: bool = False) -> ToolReport:
         "waybar": "waybar reload skipped",
         "xrdb": "Xresources merge skipped",
     }
+    # Omarchy-shell owns wallpaper + notifications; overlay players/bars are
+    # supposed to be absent (setup omarchy even drops hyprpaper/mpvpaper).
+    omarchy_skip_warn = {
+        "mpv",
+        "mpvpaper",
+        "socat",
+        "xwinwrap",
+        "nwg-look",
+        "dunst",
+        "mako",
+        "waybar",
+        "xrdb",
+    }
     for cmd, msg in soft.items():
         ok = have(cmd)
         report.present[cmd] = ok
-        if not ok:
+        if not ok and not (de.omarchy and cmd in omarchy_skip_warn):
             report.warnings.append(f"{cmd} not found: {msg}")
+    if de.omarchy:
+        report.present["omarchy"] = have("omarchy")
+        report.present["omarchy-shell"] = have("omarchy-shell")
+        if not report.present["omarchy"]:
+            report.missing_required.append("omarchy")
+        if not report.present["omarchy-shell"]:
+            report.warnings.append(
+                "omarchy-shell not found: live wallpaper/bar IPC skipped"
+            )
 
     # OpenLinkHub is a local HTTP daemon, not a CLI tool
     olh_ok = _openlinkhub_reachable()

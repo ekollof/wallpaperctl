@@ -4,7 +4,8 @@
 #   wallpaperctl  → backdrop + palette (this config) + apps omarchy does not
 #                   theme (starship, rofi, vim, weechat, …)
 #   Omarchy       → all its own app theming, rendered from the dynamic
-#                   theme's colors.toml via `omarchy theme refresh`
+#                   theme's colors.toml via wallpaperctl's live retint
+#                   (omarchy-theme-set-templates + stock no-reload helpers)
 #
 # Templates that would fight Omarchy are deliberately absent: kitty and btop
 # (omarchy ships staged/symlinked themes), GTK (Adwaita via omarchy-theme-set-gnome),
@@ -23,7 +24,7 @@ fallback_colors = ["#FFFFFF", "#000000", "#D3D3D3", "#808080"]
 palette = "kmeans"
 check_contrast = true
 saturation = 45
-alpha = 75
+alpha = 85
 pywal = true
 
 [templates]
@@ -37,7 +38,8 @@ css = { template = "colors.css", target = "~/.cache/wal/colors.css", new_engine 
 vim = { template = "colors-wal.vim", target = "~/.cache/wal/colors-wal.vim", pywal = true }
 xrdb = { template = "colors.Xresources", target = "~/.cache/wal/colors.Xresources", pywal = true }
 rofi = { template = "colors-rofi.rasi", target = "~/.config/rofi/wallust/colors-rofi.rasi", new_engine = true }
-starship = { template = "starship.toml", target = "~/.config/starship.toml"}
+# starship.toml is rendered from omarchy-theme-color by the theme-set hook
+# and OmarchyThemeOp (wallust colors diverge from colors.toml).
 awesome = { template = "awesome-colors.lua", target = "~/.cache/wal/awesome-colors.lua", new_engine = true }
 oomox = { template = "colors-oomox", target = "~/.cache/wal/colors-oomox", pywal = true }
 neomutt = { template = "pywal.muttrc", target = "~/.cache/wal/colors.muttrc.unused", new_engine = true }

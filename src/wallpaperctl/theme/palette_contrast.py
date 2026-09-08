@@ -136,8 +136,6 @@ def fix_installed_palette(
     accent_min: float = 3.0,
 ) -> bool:
     """Contrast-fix colors.json + generated files; regenerate opencode theme."""
-    from wallpaperctl.omarchy import omarchy_available
-
     wal = wal_dir or WAL_DIR
     data = load_colors_json(wal / "colors.json")
     if data is None:
@@ -155,7 +153,7 @@ def fix_installed_palette(
     )
     extra = (
         [p for p in EXTRA_TARGETS if "kitty" not in str(p) and "btop" not in str(p)]
-        if omarchy_available()
+        if have("omarchy")
         else list(EXTRA_TARGETS)
     )
     changed = apply_hex_map(mapping, [*generated, *extra])
@@ -170,7 +168,7 @@ def fix_installed_palette(
     # are themed by omarchy: regenerating the wallust opencode theme flips
     # tui.json back to theme "wallust", and the kitty SIGUSR1 reload is pure
     # churn that interrupts running TUI agents on every wallpaper change.
-    if omarchy_available():
+    if have("omarchy"):
         log.debug("palette contrast: omarchy detected; skipping opencode/kitty refresh")
         return True
     if OPENCODE_SCRIPT.is_file():

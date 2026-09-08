@@ -14,6 +14,16 @@
 # must stay a bash script. `$1` is the theme slug.
 
 THEME_DIR="${HOME}/.local/state/omarchy/current/theme"
+# wallpaperctl stages the clip in the user theme and may not have copied it
+# into current/theme yet (it avoids ``omarchy theme set``). Prefer that path
+# when the Dynamic Wallpapers theme is the one being applied.
+SLUG="${1:-}"
+if [[ $SLUG == dynamic-wallpapers ]]; then
+  USER_THEME="${HOME}/.config/omarchy/themes/dynamic-wallpapers"
+  if [[ -d $USER_THEME ]]; then
+    THEME_DIR=$USER_THEME
+  fi
+fi
 CACHE_DIR="${HOME}/.cache/wallpaperctl"
 
 # Cover omarchy-restart-hyprctl: the motion watcher would otherwise

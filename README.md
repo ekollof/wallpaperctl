@@ -256,13 +256,22 @@ While that theme is active, every wallpaper change:
 2. runs wallust on the image,
 3. rewrites the theme's `colors.toml` from the palette and live-applies it to
    omarchy-shell (bar/chrome) immediately,
-4. runs `omarchy theme refresh` so all Omarchy-managed apps (terminal, btop,
-   browser, editor, keyboard RGB, …) retint from templates.
+4. renders app configs with `omarchy-theme-set-templates` (skipping `*.lua` so
+   Hyprland does not reload) and runs stock no-reload helpers (terminal, btop,
+   foot, gnome, browser, keyboard, …).
 
-`omarchy theme refresh` already reloads terminals and OpenCode; wallpaperctl
-does not send a second SIGUSR2. GTK / nwg-look / dunst-or-mako ops are skipped
-on Omarchy so they cannot fight `omarchy-theme-set-gnome` or the shell
-notifier. Unchanged palettes skip the refresh entirely.
+A full `omarchy theme set` / `theme refresh` is **not** used on wallpaper
+changes — that `hyprctl reload`s and snaps autorotation. GTK / nwg-look /
+dunst-or-mako ops are skipped on Omarchy so they cannot fight
+`omarchy-theme-set-gnome` or the shell notifier. Unchanged palettes skip
+the app retint entirely.
+
+Terminals get **background-only** opacity so wallpaper shows through empty
+cells while text stays opaque: Kitty `background_opacity`, Ghostty
+`background-opacity`, Foot `alpha` (in `[colors-dark]`), Alacritty
+`window.opacity` with `transparent_background_colors = false`. This is not
+Hyprland window opacity (that fades glyphs). Override with
+`terminal_background_opacity` in ops.toml (`1.0` = solid).
 
 Switch to any other Omarchy theme and wallpaperctl only swaps backgrounds
 (no color changes); switching back resumes full dynamic behavior. No new
@@ -272,7 +281,7 @@ updates.
 ## Theme operations (order)
 
 1. wallust  
-2. omarchy (Dynamic Wallpapers theme: colors.toml + `omarchy theme refresh`; only when that theme is active)  
+2. omarchy (Dynamic Wallpapers theme: colors.toml + live retint; only when that theme is active)  
 3. cosmic-theme (COSMIC DE: soft accent + optional surfaces; not full neon recolor)  
 4. pywalfox (boost `colors.json` contrast for Firefox controls, then `pywalfox update`)  
 5. xresources (`xrdb -merge`)  

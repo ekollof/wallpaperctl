@@ -11,7 +11,9 @@
   when it is `dynamic-wallpapers`, wallpaperctl drives wallpapers **and** colors.
 - When another theme is active: wallpaperctl still sets the background via omarchy
   (bg-only mode); colors are not touched.
-- Per-wallpaper retint = **full `omarchy theme refresh`** (official tooling; terminals hot-reload).
+- Per-wallpaper retint = **live** (`omarchy-theme-set-templates` + stock no-reload
+  helpers). Never `omarchy theme set` / `theme refresh` on wallpaper change
+  (`hyprctl reload` snaps autorotation).
 - Palette source: wallust (`~/.cache/wal/colors.json`, post contrast-fix) → omarchy
   `colors.toml`. Accent via existing `pick_accent()` strategy.
 - Animated wallpapers: use **omarchy motion-wallpaper** (`omarchy-shell motion-wallpaper
@@ -61,27 +63,18 @@
   - theme dir sync: exactly current wallpaper in `backgrounds/` (hardlink→copy),
     Pillow `preview.png`; stage/remove `wallpaper-video.<ext>` (hardlink→copy)
     for animated/static → hook handles play/stop on refresh
-  - skip refresh when rendered palette unchanged (`omarchy_skip_unchanged`, default on)
-  - refresh can be disabled entirely (`omarchy_refresh_apps`, default on → colors.toml
-    staged only, applied on next manual theme refresh/re-selection)
-  - **opencode follows via the stock "system" theme**: `setup omarchy` removes the
-    wallust hot-reload plugin and resets tui.json to `theme: "system"`
-    (terminal-adaptive — opencode follows the terminal palette that omarchy
-    reloads). After each successful `omarchy theme refresh`, wallpaperctl sends
-    SIGUSR2 to running opencode sessions (`omarchy-restart-opencode`, fallback
-    `pkill -USR2 -x opencode`) so the system theme re-resolves against the new
-    terminal colors. Self-heals stray wallust registration (`_heal_opencode`).
-    NOTE: SIGUSR2 briefly redraws TUIs — that is stock omarchy behavior.
-  - **starship follows Omarchy themes**: theme-set hook
-    (`~/.config/omarchy/hooks/theme-set.d/wallpaperctl-starship`, bash + sed —
-    hook runners execute hooks with `bash "$hook"`, so it must stay a bash
-    script; a python file here is interpreted as shell and blocks on stdin,
-    hanging omarchy theme set) renders the wallust starship template from the
-    theme colors.toml on every theme switch; installed by `setup omarchy`
-  - self-heals stray wallust opencode registration (`_heal_opencode`)
-  - run `omarchy theme refresh` (fallback: `OMARCHY_THEME_SKIP_BACKGROUND=1
-    omarchy theme set dynamic-wallpapers`), timeout `omarchy_timeout`
+  - skip live retint when rendered palette unchanged (`omarchy_skip_unchanged`)
+  - retint can be disabled entirely (`omarchy_refresh_apps` → colors.toml only)
+  - live retint: `omarchy-theme-set-templates` into current/theme (skip `*.lua`),
+    `hl.config` borders, stock no-reload helpers (terminal/btop/foot/gnome/…);
+    never `omarchy theme set` / `theme refresh` / `omarchy-restart-hyprctl`
+  - **opencode**: copy staged `opencode.json` → `themes/omarchy.json`
+    (`omarchy-theme-set-opencode` when present; else copy + `omarchy-restart-opencode`).
+    Setup removes the wallust hot-reload plugin. `_heal_opencode` self-heals.
+  - **starship**: theme-set hook + live retint render from `omarchy-theme-color`
+    (not wallust). Hook must stay bash (`bash "$hook"`).
   - `ensure_theme_skeleton()` / `write_palette_preview()` reused by setup
+    (repairs missing preview.png)
 - [x] `src/wallpaperctl/setup/omarchy_bootstrap.py` — `bootstrap_omarchy()`, `omarchy_status()`:
   - verify omarchy present (hard error + guidance if absent); warn if shell not running
   - ensure wallust (AUR-aware: `wallust-git` via paru/yay → fallback `wallust`;

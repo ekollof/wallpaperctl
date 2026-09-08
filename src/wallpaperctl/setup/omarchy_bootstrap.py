@@ -89,10 +89,10 @@ def _ensure_qt_multimedia(*, yes: bool) -> bool:
     if rc == 0 and qt_multimedia_present():
         print("✓ Qt Multimedia module installed.")
         if is_omarchy_shell_running():
-            print("  Run: omarchy-restart-shell  (shell must reload to load it)")
+            print("  Run: omarchy restart shell  (shell must reload to load it)")
         return True
     print("Warning: Qt Multimedia install failed; animated wallpapers fall back")
-    print("  to mpvpaper. After installing it manually, run: omarchy-restart-shell")
+    print("  to a still frame. After installing it manually, run: omarchy restart shell")
     return False
 
 # Overlay wallpaper tools leftover from a generic ``setup install`` on Omarchy.
@@ -495,9 +495,13 @@ def bootstrap_omarchy(*, yes: bool = False, force: bool = False) -> int:
 
     print()
     print("wallpaperctl now drives wallpapers and colors whenever this theme is")
-    print("active: each wallpaper change rewrites colors.toml and refreshes the")
-    print("theme through omarchy tooling (terminals, bar, btop, browser, …).")
+    print("active: each wallpaper change rewrites colors.toml and live-retints")
+    print("Omarchy-managed apps (no omarchy theme set / hyprctl reload).")
     print()
+    from wallpaperctl.config import load_ops_config
+    from wallpaperctl.theme.terminal_opacity import apply_terminal_background_opacity
+
+    apply_terminal_background_opacity(load_ops_config().terminal_background_opacity)
     from wallpaperctl.omarchy_watch import ensure_watch_running
 
     ensure_watch_running()

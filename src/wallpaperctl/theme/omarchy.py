@@ -32,6 +32,7 @@ from wallpaperctl.omarchy import (
     omarchy_available,
     omarchy_env,
     user_theme_dir,
+    user_themes_dir,
 )
 from wallpaperctl.theme.base import debug_op
 from wallpaperctl.theme.cosmic import pick_accent
@@ -216,21 +217,49 @@ def sync_theme_media(
             entry.unlink()
         except OSError as e:
             log.debug("omarchy theme: could not remove %s: %s", entry, e)
+    staged_video: Path | None = None
     if video_path is not None and video_path.is_file():
         suffix = video_path.suffix.lstrip(".").lower()
         if suffix in MOTION_VIDEO_EXTENSIONS:
-            staged = _hardlink_or_copy(
-                video_path, theme_dir / f"wallpaper-video.{suffix}"
-            )
+            staged_video = theme_dir / f"wallpaper-video.{suffix}"
+            staged = _hardlink_or_copy(video_path, staged_video)
             ok = ok and staged
+            if not staged:
+                staged_video = None
         else:
             log.debug(
                 "omarchy theme: video codec %s not stageable; playback stays setter-driven",
                 suffix,
             )
 
+    _sync_current_theme_video(theme_dir, staged_video)
     _write_preview(theme_dir, image_path)
     return ok
+
+
+def _sync_current_theme_video(theme_dir: Path, staged_video: Path | None) -> None:
+    """Keep current/theme/wallpaper-video.* in sync without replacing the dir.
+
+    The theme-set hook reads that path. wallpaperctl does not run
+    ``omarchy theme set``, so the clip would otherwise stay stale.
+    Only runs when *theme_dir* is a live user Omarchy theme (unit tests
+    stage into throwaway paths).
+    """
+    try:
+        theme_dir.resolve().relative_to(user_themes_dir().resolve())
+    except (OSError, ValueError):
+        return
+    current, _ = _current_theme_dirs()
+    if not current.is_dir():
+        return
+    for entry in current.glob("wallpaper-video.*"):
+        try:
+            entry.unlink()
+        except OSError as e:
+            log.debug("omarchy theme: could not remove staged %s: %s", entry, e)
+    if staged_video is None or not staged_video.is_file():
+        return
+    _hardlink_or_copy(staged_video, current / staged_video.name)
 
 
 def _write_preview(theme_dir: Path, image_path: Path) -> None:
@@ -281,7 +310,20 @@ def write_palette_preview(theme_dir: Path, mapping: dict[str, str]) -> bool:
 
 # Live retint only. Never omarchy-restart-hyprctl / theme-set / theme-refresh:
 # those `hyprctl reload` and re-run monitors.lua (autorotation snaps back).
-_RETINT_COMMANDS = ("omarchy-restart-terminal",)
+# Browser and opencode have dedicated follow-up functions (sudo / watcher).
+_RETINT_COMMANDS = (
+    "omarchy-restart-terminal",
+    "omarchy-restart-btop",
+    "omarchy-restart-helix",
+    "omarchy-theme-set-foot",
+    "omarchy-theme-set-tmux",
+    "omarchy-theme-set-gnome",
+    "omarchy-theme-set-pi",
+    "omarchy-theme-set-claude",
+    "omarchy-theme-set-vscode",
+    "omarchy-theme-set-obsidian",
+    "omarchy-theme-set-keyboard",
+)
 
 
 def _current_theme_dirs() -> tuple[Path, Path]:
@@ -457,10 +499,48 @@ def _apply_hypr_borders(mapping: dict[str, str]) -> None:
         )
 
 
+def _mapping_from_colors_toml(path: Path) -> dict[str, str]:
+    """Load semantic keys from a colors.toml; empty dict on failure."""
+    try:
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib  # type: ignore[no-redef]
+
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, ImportError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out: dict[str, str] = {}
+    for key, value in data.items():
+        if isinstance(key, str) and isinstance(value, str):
+            out[key] = value
+    return out
+
+
+def apply_hypr_borders_from_colors_file(path: Path | None = None) -> None:
+    """Apply live Hyprland borders from the staged (or given) colors.toml.
+
+    Used at wallpaper retint and at session start so login does not keep the
+    last hyprland.lua palette (that file is not rewritten — it auto-reloads).
+    """
+    if path is None:
+        current, _ = _current_theme_dirs()
+        path = current / "colors.toml"
+    if not path.is_file():
+        return
+    mapping = _mapping_from_colors_toml(path)
+    if mapping:
+        _apply_hypr_borders(mapping)
+
+
 def retint_without_compositor_reload(
     theme_dir: Path,
     slug: str,
     mapping: dict[str, str] | None = None,
+    *,
+    background_opacity: float | None = None,
 ) -> bool:
     """Render Kitty (etc.) from wallust colors; retint Hypr borders via hl.config."""
     del slug  # kept so callers stay (theme_dir, slug)
@@ -483,6 +563,14 @@ def retint_without_compositor_reload(
         return False
     if mapping:
         _apply_hypr_borders(mapping)
+    if background_opacity is not None:
+        from wallpaperctl.theme.terminal_opacity import (
+            apply_terminal_background_opacity,
+            reload_terminals_for_opacity,
+        )
+
+        apply_terminal_background_opacity(background_opacity)
+        reload_terminals_for_opacity()
     for cmd in _RETINT_COMMANDS:
         if have(cmd):
             run([cmd], timeout=20)
@@ -586,31 +674,54 @@ def _nudge_opencode_watchers(ctx: WallpaperContext) -> None:
             pass
 
 
+def _install_opencode_json() -> bool:
+    """Copy staged opencode.json to the TUI plugin watch path (stock Omarchy).
+
+    ``omarchy-theme-set-opencode`` is not in packaged Omarchy; this is the
+    same atomic replace that helper performs.
+    """
+    src = home() / ".local" / "state" / "omarchy" / "current" / "theme" / "opencode.json"
+    if not src.is_file():
+        return False
+    dest_dir = _opencode_themes_dir()
+    dest = dest_dir / "omarchy.json"
+    tmp = dest_dir / f".omarchy.json.{os.getpid()}"
+    try:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, tmp)
+        os.replace(tmp, dest)
+        return True
+    except OSError:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+
+
 def sync_opencode_theme(ctx: WallpaperContext) -> bool:
     """Refresh opencode colors from the freshly rendered theme.
 
-    The retint regenerates ``current/theme/opencode.json``;
-    omarchy-theme-set-opencode copies it to
-    ``~/.config/opencode/themes/omarchy.json`` where omarchy's own TUI plugin
-    watches it and retints running sessions. Called without ``--activate``:
-    plugin installation and the tui.json theme selection stay omarchy
-    theme-set territory (and _heal_opencode stays authoritative for
-    de-theming).
-
-    While opencode is running, the plugin's apply is verified via its
-    content-hashed install; a missed fs event gets one same-bytes rewrite to
-    re-fire the watchers.
+    The retint regenerates ``current/theme/opencode.json``. Packaged Omarchy
+    has no ``omarchy-theme-set-opencode``; when that helper is missing we
+    copy the json ourselves and SIGUSR2 via ``omarchy-restart-opencode``.
     """
-    if not have("omarchy-theme-set-opencode"):
-        return False
-    r = run(["omarchy-theme-set-opencode"], timeout=15, env=omarchy_env())
-    if r.returncode != 0:
-        debug_op(
-            "omarchy",
-            "omarchy-theme-set-opencode failed: "
-            f"{(r.stderr or r.stdout or '').strip()[:200]}",
-            ctx,
-        )
+    if have("omarchy-theme-set-opencode"):
+        r = run(["omarchy-theme-set-opencode"], timeout=15, env=omarchy_env())
+        if r.returncode != 0:
+            debug_op(
+                "omarchy",
+                "omarchy-theme-set-opencode failed: "
+                f"{(r.stderr or r.stdout or '').strip()[:200]}",
+                ctx,
+            )
+            return False
+    elif _install_opencode_json():
+        if have("omarchy-restart-opencode"):
+            run(["omarchy-restart-opencode"], timeout=10, env=omarchy_env())
+    elif have("omarchy-restart-opencode"):
+        run(["omarchy-restart-opencode"], timeout=10, env=omarchy_env())
+    else:
         return False
     if not pgrep_exact("opencode"):
         return True
@@ -730,6 +841,16 @@ class OmarchyThemeOp:
             and not palette_changed
         ):
             debug_op(self.name, "palette unchanged; skipping app retint", ctx)
+            from wallpaperctl.theme.terminal_opacity import (
+                apply_terminal_background_opacity,
+                reload_terminals_for_opacity,
+            )
+
+            opacity = getattr(ctx.ops, "terminal_background_opacity", 0.85)
+            if apply_terminal_background_opacity(opacity):
+                reload_terminals_for_opacity()
+                if have("omarchy-restart-terminal"):
+                    run(["omarchy-restart-terminal"], timeout=20)
         else:
             from wallpaperctl.omarchy_watch import (
                 restore_monitor_transforms,
@@ -741,7 +862,14 @@ class OmarchyThemeOp:
             # runtime transform back. Do not leave monitors.lua's landscape.
             transforms = snapshot_monitor_transforms()
             suppress_layout_rebind(8.0)
-            if retint_without_compositor_reload(theme_dir, slug, mapping):
+            if retint_without_compositor_reload(
+                theme_dir,
+                slug,
+                mapping,
+                background_opacity=getattr(
+                    ctx.ops, "terminal_background_opacity", 0.85
+                ),
+            ):
                 debug_op(self.name, "kitty/hypr retinted from wallust palette", ctx)
                 if getattr(ctx.ops, "omarchy_refresh_opencode", True):
                     if sync_opencode_theme(ctx):
@@ -776,6 +904,8 @@ class OmarchyThemeOp:
                     ctx,
                 )
             restore_monitor_transforms(transforms)
+            if palette_changed:
+                _render_starship_from_theme()
 
         if palette_changed:
             current, _ = _current_theme_dirs()
@@ -793,6 +923,18 @@ def _read_text(path: Path) -> str | None:
         return path.read_text(encoding="utf-8")
     except OSError:
         return None
+
+
+def _render_starship_from_theme() -> None:
+    """Render starship.toml from omarchy-theme-color (same as the theme-set hook).
+
+    wallust-omarchy.toml no longer writes starship; this keeps the prompt on
+    the Omarchy palette after a wallpaper change that is not a theme set.
+    """
+    hook = home() / ".config" / "omarchy" / "hooks" / "theme-set.d" / "wallpaperctl-starship"
+    if not hook.is_file():
+        return
+    run(["bash", str(hook)], timeout=15, env=omarchy_env())
 
 
 def fallback_palette() -> dict:
@@ -829,10 +971,22 @@ def ensure_theme_skeleton(
     *,
     accent_strategy: str = "warmest",
 ) -> bool:
-    """Create the dynamic theme skeleton if it does not exist yet (setup path)."""
+    """Create the dynamic theme skeleton if it does not exist yet (setup path).
+
+    If the theme already has colors.toml, still repair a missing preview.png
+    (the switcher hides themes without one).
+    """
     theme_dir = theme_dir or user_theme_dir()
     colors_file = theme_dir / "colors.toml"
-    if colors_file.is_file():
+    created = not colors_file.is_file()
+    if not created:
+        (theme_dir / "backgrounds").mkdir(parents=True, exist_ok=True)
+        if not (theme_dir / "preview.png").is_file():
+            colors = load_colors_json() or fallback_palette()
+            write_palette_preview(
+                theme_dir,
+                build_colors_mapping(colors, accent_strategy=accent_strategy),
+            )
         return False
 
     colors = load_colors_json()

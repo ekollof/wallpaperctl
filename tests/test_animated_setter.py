@@ -385,6 +385,9 @@ def test_applies_skips_desktops_that_own_wallpaper(tmp_path: Path) -> None:
     assert not AnimatedSetter().applies(
         WallpaperContext(video, DesktopEnvironment(cosmic=True), ops)
     )
+    assert not AnimatedSetter().applies(
+        WallpaperContext(video, DesktopEnvironment(hyprland=True, omarchy=True), ops)
+    )
     with patch.dict(os.environ, {"WAYLAND_DISPLAY": "wayland-1"}, clear=False):
         assert not AnimatedSetter().applies(
             WallpaperContext(video, DesktopEnvironment(xfce=True), ops)

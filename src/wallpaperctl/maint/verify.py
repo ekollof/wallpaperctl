@@ -284,7 +284,7 @@ def _verify_omarchy(ops: OpsConfig) -> bool:
         print(f"{'✓' if fresh else '!'} opencode theme ({label}): "
               f"{'fresh' if fresh else 'OLDER than colors.toml'}")
         if not fresh and label == "live":
-            print("  → omarchy theme refresh did not sync opencode; try: omarchy theme refresh")
+            print("  → opencode theme older than colors.toml; re-run: wallpaperctl -R")
             ok = False
 
     # 4. opencode registration + leftovers
@@ -295,13 +295,13 @@ def _verify_omarchy(ops: OpsConfig) -> bool:
         except (OSError, ValueError):
             tui = {}
         sel = tui.get("theme")
-        # stock omarchy: "system" (terminal-adaptive); tolerate legacy names
+        # omarchy plugin owns theme "omarchy"; "system" is the older terminal-adaptive name
         good = isinstance(sel, str) and sel != "wallust" and sel != ""
         mark = "✓" if good else "!"
         print(f"{mark} tui.json theme: {sel or '(none)'}"
-              f"{' (stock: system)' if sel != 'system' else ''}")
+              f"{' (want: omarchy)' if sel not in ('omarchy', 'system') else ''}")
         if not good:
-            print("  → fix: wallpaperctl setup omarchy (or omarchy theme refresh)")
+            print("  → fix: wallpaperctl setup omarchy")
             ok = False
         plugins = tui.get("plugin") or []
         leftover = [p for p in plugins if "wallust-hot-reload" in str(p)]
@@ -318,9 +318,8 @@ def _verify_omarchy(ops: OpsConfig) -> bool:
 
     # 5. guidance for sessions
     print()
-    print("Live opencode sessions retint only when they were started with theme")
-    print("'omarchy' (omarchy's owned() gate). Sessions started before the last")
-    print("tui.json fix keep 'wallust' selected and are ignored — restart them once.")
+    print("Live opencode sessions retint when tui.json theme is 'omarchy' (plugin")
+    print("owned() gate). Sessions still on 'wallust' need one restart.")
     return ok
 
 

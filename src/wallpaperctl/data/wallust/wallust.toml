@@ -40,7 +40,7 @@ check_contrast = true
 saturation = 45
 
 # Alpha value for templating, by default 100 (no other use whatsoever)
-alpha = 75
+alpha = 85
 
 pywal = true
 

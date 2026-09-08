@@ -86,9 +86,9 @@ class OpsConfig:
     # Chromium-family managed policies and running browsers follow the new
     # palette (Omarchy owns those policies; see theme/browser.py).
     omarchy_refresh_browser: bool = True
-    # After a successful retint, re-run omarchy-theme-set-opencode so
-    # ~/.config/opencode/themes/omarchy.json follows the palette and omarchy's
-    # TUI plugin retints running sessions.
+    # After a successful retint, copy opencode.json to the TUI plugin watch
+    # path (omarchy-theme-set-opencode when present, else a local copy +
+    # omarchy-restart-opencode).
     omarchy_refresh_opencode: bool = True
     # Skip live retint when the rendered palette is unchanged (e.g. -R).
     omarchy_skip_unchanged: bool = True
@@ -113,6 +113,9 @@ class OpsConfig:
     wallust_fix_contrast: bool = True
     wallust_text_contrast: float = 4.5
     wallust_accent_contrast: float = 3.0
+    # Terminal *background* opacity (0.20–1.0). Text stays opaque. 1.0 = solid
+    # bg (no wallpaper bleed). Not Hyprland window opacity (that fades glyphs).
+    terminal_background_opacity: float = 0.85
     gtk_theme_plasma: str = "Breeze"
     gtk_theme_xfce: str = "FlatColor-dark"
     gtk_theme_cinnamon: str = "Mint-Y"

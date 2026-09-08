@@ -61,6 +61,13 @@ def _no_real_process_signals(monkeypatch):
     monkeypatch.setattr(
         "wallpaperctl.theme.omarchy.pgrep_exact", lambda name: False
     )
+    monkeypatch.setattr(
+        "wallpaperctl.theme.terminal_opacity.pgrep_exact", lambda name: False
+    )
+    monkeypatch.setattr(
+        "wallpaperctl.theme.terminal_opacity.run",
+        lambda *a, **k: type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})(),
+    )
     monkeypatch.setattr("time.sleep", lambda seconds: None)
 
 # ── helpers / state ──────────────────────────────────────────────────────
@@ -195,6 +202,28 @@ def test_render_colors_toml_roundtrip():
     assert data["color7"] == "#cacccc"
 
 
+def test_apply_hypr_borders_from_colors_file(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    colors = tmp_path / "colors.toml"
+    colors.write_text(
+        'hyprland_active_border = "rgba(aabbccdd) rgba(112233ee) 45deg"\n',
+        encoding="utf-8",
+    )
+    runs: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        runs.append(list(args))
+        return type("R", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
+
+    with (
+        patch("wallpaperctl.theme.omarchy.have", return_value=True),
+        patch("wallpaperctl.theme.omarchy.run", side_effect=fake_run),
+    ):
+        tom.apply_hypr_borders_from_colors_file(colors)
+    assert any(c[:2] == ["hyprctl", "eval"] and "hl.config(" in c[2] for c in runs)
+    assert not any(c[:2] == ["hyprctl", "reload"] for c in runs)
+
+
 def test_write_colors_toml_atomic(tmp_path):
     target = tom.write_colors_toml(tmp_path, {"accent": "#ff0000"})
     assert target.is_file()
@@ -260,6 +289,36 @@ def test_sync_replaces_previous_background(tmp_path):
     sync_theme_media(theme, new)
     backgrounds = list((theme / "backgrounds").iterdir())
     assert [p.name for p in backgrounds] == ["new.jpg"]
+
+
+def test_sync_animated_updates_current_theme_video(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    img = tmp_path / "frame.jpg"
+    img.write_bytes(b"frame")
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"video")
+    theme = tmp_path / ".config" / "omarchy" / "themes" / THEME_SLUG
+    theme.mkdir(parents=True)
+    current = tmp_path / ".local" / "state" / "omarchy" / "current" / "theme"
+    current.mkdir(parents=True)
+    (current / "wallpaper-video.mp4").write_bytes(b"stale")
+
+    assert sync_theme_media(theme, img, video_path=video)
+    staged = current / "wallpaper-video.mp4"
+    assert staged.read_bytes() == b"video"
+
+
+def test_sync_static_clears_current_theme_video(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    img = _png(tmp_path, "wall.jpg")
+    theme = tmp_path / ".config" / "omarchy" / "themes" / THEME_SLUG
+    theme.mkdir(parents=True)
+    current = tmp_path / ".local" / "state" / "omarchy" / "current" / "theme"
+    current.mkdir(parents=True)
+    (current / "wallpaper-video.mp4").write_bytes(b"stale")
+
+    assert sync_theme_media(theme, img, video_path=None)
+    assert not list(current.glob("wallpaper-video.*"))
 
 
 # ── setter ───────────────────────────────────────────────────────────────
@@ -436,6 +495,7 @@ def test_op_run_skips_compositor_reload_when_templates_work(monkeypatch, tmp_pat
             nxt = tmp_path / ".local" / "state" / "omarchy" / "current" / "next-theme"
             nxt.mkdir(parents=True, exist_ok=True)
             (nxt / "hyprland.lua").write_text("hl.config({})\n", encoding="utf-8")
+            (nxt / "kitty.conf").write_text("background #111111\n", encoding="utf-8")
         return type("R", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
 
     with (
@@ -452,6 +512,13 @@ def test_op_run_skips_compositor_reload_when_templates_work(monkeypatch, tmp_pat
     assert ["omarchy-restart-hyprctl"] not in runs
     assert ["omarchy-hook", "theme-set", THEME_SLUG] not in runs
     assert ["omarchy-restart-terminal"] in runs
+    assert ["omarchy-restart-btop"] in runs
+    kitty = (
+        tmp_path / ".local" / "state" / "omarchy" / "current" / "theme" / "kitty.conf"
+    )
+    assert "background_opacity 0.85" in kitty.read_text(encoding="utf-8")
+    assert ["omarchy-theme-set-gnome"] in runs
+    assert ["omarchy-theme-set-foot"] in runs
 
 
 def test_op_run_refreshes_browser_policy_after_retint(monkeypatch, tmp_path):
@@ -502,6 +569,43 @@ def test_op_run_syncs_opencode_theme_after_retint(monkeypatch, tmp_path):
         assert OmarchyThemeOp().run(_ctx(tmp_path))
 
     assert ["omarchy-theme-set-opencode"] in runs
+
+
+def test_op_run_opencode_fallback_without_helper(monkeypatch, tmp_path):
+    """Stock Omarchy has no omarchy-theme-set-opencode; copy json + SIGUSR2."""
+    _fake_home(monkeypatch, tmp_path)
+    monkeypatch.delenv("OPENCODE_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    _theme_state(tmp_path, THEME_SLUG)
+    runs: list[list[str]] = []
+
+    def fake_have(name: str) -> bool:
+        return name != "omarchy-theme-set-opencode"
+
+    def fake_run(args, **kwargs):
+        runs.append(list(args))
+        if list(args)[:1] == ["omarchy-theme-set-templates"]:
+            nxt = tmp_path / ".local" / "state" / "omarchy" / "current" / "next-theme"
+            nxt.mkdir(parents=True, exist_ok=True)
+            (nxt / "opencode.json").write_text(
+                '{"theme": {"accent": "#111111"}}', encoding="utf-8"
+            )
+            (nxt / "kitty.conf").write_text("x\n", encoding="utf-8")
+        return type("R", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
+
+    with (
+        patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
+        patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.theme.omarchy.have", side_effect=fake_have),
+        patch("wallpaperctl.theme.omarchy.run", side_effect=fake_run),
+    ):
+        assert OmarchyThemeOp().run(_ctx(tmp_path))
+
+    assert ["omarchy-theme-set-opencode"] not in runs
+    assert ["omarchy-restart-opencode"] in runs
+    dest = tmp_path / ".config" / "opencode" / "themes" / "omarchy.json"
+    assert dest.is_file()
+    assert "#111111" in dest.read_text(encoding="utf-8")
 
 
 def test_op_run_opencode_sync_disabled(monkeypatch, tmp_path):
@@ -1003,6 +1107,17 @@ def test_ensure_skeleton_fallback_palette(monkeypatch, tmp_path):
     assert not ensure_theme_skeleton(tmp_path / "theme")
 
 
+def test_ensure_skeleton_repairs_missing_preview(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    theme = tmp_path / "theme"
+    theme.mkdir()
+    (theme / "colors.toml").write_text('accent = "#ff0000"\n', encoding="utf-8")
+    assert not (theme / "preview.png").is_file()
+    assert not ensure_theme_skeleton(theme)
+    assert (theme / "preview.png").is_file()
+    assert (theme / "colors.toml").read_text(encoding="utf-8") == 'accent = "#ff0000"\n'
+
+
 def test_palette_preview_renders_swatch(monkeypatch, tmp_path):
     _fake_home(monkeypatch, tmp_path)
     theme = tmp_path / "theme"
@@ -1244,7 +1359,7 @@ def test_qt_multimedia_install_failure_is_soft(capsys):
     ):
         assert not obm._ensure_qt_multimedia(yes=True)
     out = capsys.readouterr().out
-    assert "mpvpaper" in out and "omarchy-restart-shell" in out
+    assert "omarchy restart shell" in out
 
 
 def test_qt_multimedia_present_qmake_root(tmp_path):
@@ -1291,8 +1406,9 @@ def test_omarchy_wallust_config_vendored():
     # omarchy-managed targets must not be wallust-rendered
     for banned in ("kitty", "btop", "opencode", "hypr", "waybar", "cosmic", "gtk-3.0", "gtk-4.0"):
         assert banned not in targets
-    # apps omarchy does not theme stay palette-driven (incl. starship)
-    for kept in ("colors.json", "starship"):
+    # apps omarchy does not theme stay palette-driven; starship is hook-rendered
+    assert "starship" not in targets
+    for kept in ("colors.json", "rofi"):
         assert kept in targets
 
 

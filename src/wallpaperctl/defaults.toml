@@ -38,6 +38,9 @@ wallust_palette = "kmeans"
 wallust_fix_contrast = true
 wallust_text_contrast = 4.5
 wallust_accent_contrast = 3.0
+# Terminal background opacity (text stays opaque). 1.0 = no wallpaper bleed.
+# Kitty, Ghostty, Foot, Alacritty. Not Hyprland window opacity.
+# terminal_background_opacity = 0.85
 gtk_theme_plasma = "Breeze"
 gtk_theme_xfce = "FlatColor-dark"
 gtk_theme_cinnamon = "Mint-Y"
@@ -67,7 +70,7 @@ wallpaper_dir = "~/Wallpapers"
 # Omarchy dynamic theme (see theme/omarchy.py)
 # omarchy_theme_slug = "dynamic-wallpapers"   # displayed as "Dynamic Wallpapers"
 # omarchy_accent_strategy = "warmest"         # palette strategy for colors.toml accent
-# omarchy_timeout = 60                        # omarchy theme refresh budget (seconds; runner adds slack)
+# omarchy_timeout = 60                        # live retint budget (seconds; runner adds slack)
 # omarchy_refresh_apps = true                 # false = stage colors.toml only, no app retint
 # omarchy_refresh_browser = true              # false = leave browser chrome to manual theme switches
 # omarchy_refresh_opencode = true             # false = leave opencode theme to manual theme switches

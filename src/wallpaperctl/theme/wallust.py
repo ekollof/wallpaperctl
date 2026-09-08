@@ -61,5 +61,23 @@ class WallustOp:
             )
             debug_op(self.name, "palette contrast fix ok" if fixed else
                      "palette contrast fix skipped (no colors.json)", ctx)
+        from wallpaperctl.theme.terminal_opacity import (
+            apply_terminal_background_opacity,
+            reload_terminals_for_opacity,
+        )
+
+        patched = apply_terminal_background_opacity(
+            getattr(ctx.ops, "terminal_background_opacity", 0.85)
+        )
+        if patched:
+            reload_terminals_for_opacity()
+        if patched:
+            debug_op(
+                self.name,
+                "terminal background opacity "
+                f"{getattr(ctx.ops, 'terminal_background_opacity', 0.85)} "
+                f"on {', '.join(p.name for p in patched)}",
+                ctx,
+            )
         debug_op(self.name, "ok", ctx)
         return True

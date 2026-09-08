@@ -352,6 +352,12 @@ def watch_loop(
     _write_own_pid()
     if startup and once_socket is None:
         try:
+            from wallpaperctl.theme.omarchy import apply_hypr_borders_from_colors_file
+
+            apply_hypr_borders_from_colors_file()
+        except Exception as e:  # noqa: BLE001 — watcher must not die
+            log.debug("omarchy-watch startup border apply crashed: %s", e)
+        try:
             startup_rebind()
         except Exception as e:  # noqa: BLE001 — watcher must not die
             log.debug("omarchy-watch startup rebind crashed: %s", e)

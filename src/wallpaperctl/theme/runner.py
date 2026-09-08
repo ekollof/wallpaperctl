@@ -64,7 +64,7 @@ def _timeout_for(op_name: str, ctx: WallpaperContext) -> float:
     if op_name == "openlinkhub":
         return float(ctx.ops.openlinkhub_timeout)
     if op_name == "omarchy":
-        # Live retint (templates + kitty/hypr keyword) uses omarchy_timeout.
+        # Live retint (templates + stock no-reload helpers) uses omarchy_timeout.
         return float(ctx.ops.omarchy_timeout) + 5.0
     return float(ctx.ops.operation_timeout)
 

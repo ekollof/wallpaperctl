@@ -84,7 +84,7 @@ def test_fix_installed_palette_updates_cache(tmp_path: Path) -> None:
     )
     # never signal real processes from tests (opencode script / kitty reload)
     with (
-        patch("wallpaperctl.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.theme.palette_contrast.have", return_value=True),
         patch("wallpaperctl.theme.palette_contrast.run"),
     ):
         ok = fix_installed_palette(wal_dir=wal)
@@ -107,7 +107,10 @@ def test_fix_skips_opencode_and_kitty_on_omarchy(tmp_path: Path) -> None:
         return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     with (
-        patch("wallpaperctl.omarchy.omarchy_available", return_value=True),
+        patch(
+            "wallpaperctl.theme.palette_contrast.have",
+            side_effect=lambda c: c == "omarchy",
+        ),
         patch("wallpaperctl.theme.palette_contrast.run", side_effect=fake_run),
     ):
         ok = fix_installed_palette(wal_dir=wal)
@@ -129,13 +132,15 @@ def test_fix_regen_opencode_and_kitty_off_omarchy(tmp_path: Path) -> None:
         return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     with (
-        patch("wallpaperctl.omarchy.omarchy_available", return_value=False),
         patch(
             "wallpaperctl.theme.palette_contrast.OPENCODE_SCRIPT",
             tmp_path / "generate-wallust-theme.py",
         ),
         patch("wallpaperctl.theme.palette_contrast.run", side_effect=fake_run),
-        patch("wallpaperctl.theme.palette_contrast.have", return_value=True),
+        patch(
+            "wallpaperctl.theme.palette_contrast.have",
+            side_effect=lambda c: c != "omarchy",
+        ),
     ):
         (tmp_path / "generate-wallust-theme.py").write_text("pass", encoding="utf-8")
         assert fix_installed_palette(wal_dir=wal)
