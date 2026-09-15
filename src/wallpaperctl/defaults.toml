@@ -38,6 +38,21 @@ wallust_palette = "kmeans"
 wallust_fix_contrast = true
 wallust_text_contrast = 4.5
 wallust_accent_contrast = 3.0
+# Aether (omarchy's theming engine) extracts the dynamic-theme palette from
+# the wallpaper instead of wallust; falls back to wallust when not installed.
+aether_extract = true
+# normal | monochromatic | analogous | pastel | material | colorful | muted | bright
+aether_extract_mode = "normal"
+aether_light_mode = false
+# Omarchy lock screen style knobs (omarchy-shell [lock] card). Stock defaults:
+# background-alpha 0.8, border-alpha 1.0, selection-alpha 0.45, placeholder
+# mixed 34% from foreground toward background. Lower the card alpha for a
+# more see-through lock screen over the wallpaper.
+omarchy_lock_style = true
+omarchy_lock_background_alpha = 0.8
+omarchy_lock_border_alpha = 1.0
+omarchy_lock_selection_alpha = 0.45
+omarchy_lock_placeholder_mix = 34
 # Terminal background opacity (text stays opaque). 1.0 = no wallpaper bleed.
 # Kitty, Ghostty, Foot, Alacritty. Not Hyprland window opacity.
 # terminal_background_opacity = 0.85

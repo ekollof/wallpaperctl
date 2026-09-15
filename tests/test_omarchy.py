@@ -61,6 +61,8 @@ def _no_real_process_signals(monkeypatch):
     monkeypatch.setattr(
         "wallpaperctl.theme.omarchy.pgrep_exact", lambda name: False
     )
+    # a dev-installed aether must not shell out during tests either
+    monkeypatch.setattr("wallpaperctl.theme.aether.have", lambda cmd: False)
     monkeypatch.setattr(
         "wallpaperctl.theme.terminal_opacity.pgrep_exact", lambda name: False
     )
@@ -1028,6 +1030,236 @@ def test_op_run_refresh_disabled_stages_only(monkeypatch, tmp_path):
         run_mock.assert_not_called()
         theme_dir = tmp_path / ".config" / "omarchy" / "themes" / THEME_SLUG
         assert (theme_dir / "colors.toml").is_file()
+
+
+# ── lock screen style ────────────────────────────────────────────────────
+
+_STOCK_SHELL = (
+    "# generated shell theme\n"
+    "[bar]\n"
+    'background = "#101418"\n'
+    "\n"
+    "[lock]\n"
+    "# Lock screen password input.\n"
+    'background       = "#101418"\n'
+    "background-alpha = 0.8\n"
+    'text             = "#c8ccd4"\n'
+    f'placeholder      = "{tom._mix_hex("#c8ccd4", "#101418", 0.34)}"\n'
+    'text-error       = "#cc6666"\n'
+    'border           = "hyprland.active-border"\n'
+    'border-active    = "hyprland.active-border"\n'
+    'border-error     = "#cc6666"\n'
+    "border-alpha     = 1.0\n"
+    'selection        = "#de6145"\n'
+    "selection-alpha  = 0.45\n"
+    "\n"
+    "[notification]\n"
+    'text = "#c8ccd4"\n'
+)
+
+
+def _stock_shell(monkeypatch, tmp_path) -> Path:
+    _fake_home(monkeypatch, tmp_path)
+    current = tmp_path / ".local" / "state" / "omarchy" / "current" / "theme"
+    current.mkdir(parents=True, exist_ok=True)
+    shell = current / "shell.toml"
+    shell.write_text(_STOCK_SHELL, encoding="utf-8")
+    return shell
+
+
+def test_patch_lock_style_updates_managed_knobs(monkeypatch, tmp_path):
+    shell = _stock_shell(monkeypatch, tmp_path)
+    ops = OpsConfig()
+    ops.omarchy_lock_background_alpha = 0.35
+    ops.omarchy_lock_border_alpha = 0.6
+    ops.omarchy_lock_placeholder_mix = 12
+    values = tom._lock_knob_values(
+        {"foreground": "#c8ccd4", "background": "#101418"}, ops
+    )
+
+    assert tom.patch_shell_lock_style(shell, values)
+    text = shell.read_text(encoding="utf-8")
+    assert "background-alpha = 0.35" in text
+    assert "border-alpha     = 0.6" in text
+    # selection-alpha knob untouched at its stock value
+    assert "selection-alpha  = 0.45" in text
+    # managed keys only — other lock lines keep their values and alignment
+    assert 'background       = "#101418"' in text
+    assert 'text             = "#c8ccd4"' in text
+    assert 'text-error       = "#cc6666"' in text
+    # placeholder = 12% of foreground toward background
+    assert tom._mix_hex("#c8ccd4", "#101418", 0.12) in text
+    # idempotent
+    assert not tom.patch_shell_lock_style(shell, values)
+
+
+def test_patch_lock_style_noop_with_stock_knobs(monkeypatch, tmp_path):
+    shell = _stock_shell(monkeypatch, tmp_path)
+    values = tom._lock_knob_values(
+        {"foreground": "#c8ccd4", "background": "#101418"}, OpsConfig()
+    )
+    assert not tom.patch_shell_lock_style(shell, values)
+    assert shell.read_text(encoding="utf-8") == _STOCK_SHELL
+
+
+def test_patch_lock_style_soft_when_no_section_or_file(tmp_path):
+    missing = tmp_path / "absent.toml"
+    assert not tom.patch_shell_lock_style(missing, {"background-alpha": "0.5"})
+    empty = tmp_path / "empty.toml"
+    empty.write_text("[bar]\nbackground = '#000'\n", encoding="utf-8")
+    assert not tom.patch_shell_lock_style(empty, {"background-alpha": "0.5"})
+
+
+def test_lock_knobs_disabled(monkeypatch, tmp_path):
+    _stock_shell(monkeypatch, tmp_path)
+    ctx = _ctx(tmp_path)
+    ctx.ops.omarchy_lock_style = False
+    assert not tom.sync_shell_lock_style(ctx, {})
+
+
+def test_op_run_lock_style_push_on_knob_change(monkeypatch, tmp_path):
+    """Knob change (even with an unchanged palette) re-pushes the shell theme."""
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+
+    def fake_live(colors_file, shell_file=None, **kwargs):
+        return True
+
+    with (
+        patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
+        patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.theme.omarchy.apply_shell_theme_live", side_effect=fake_live),
+    ):
+        ctx = _ctx(tmp_path)
+        ctx.ops.omarchy_lock_background_alpha = 0.35
+        assert OmarchyThemeOp().run(ctx)  # first run writes colors.toml
+
+        current = tmp_path / ".local" / "state" / "omarchy" / "current" / "theme"
+        current.mkdir(parents=True, exist_ok=True)
+        (current / "shell.toml").write_text(_STOCK_SHELL, encoding="utf-8")
+
+        pushed_into: list[Path | None] = []
+        recorded = patch(
+            "wallpaperctl.theme.omarchy.apply_shell_theme_live",
+            side_effect=lambda colors, shell=None, **k: pushed_into.append(shell)
+            or True,
+        )
+        with recorded:
+            ctx2 = _ctx(tmp_path)
+            ctx2.ops.omarchy_lock_background_alpha = 0.35
+            assert OmarchyThemeOp().run(ctx2)  # palette unchanged → skip branch
+        assert pushed_into and pushed_into[0] == current / "shell.toml"
+
+        pushed_into.clear()
+        recorded2 = patch(
+            "wallpaperctl.theme.omarchy.apply_shell_theme_live",
+            side_effect=lambda colors, shell=None, **k: pushed_into.append(shell)
+            or True,
+        )
+        with recorded2:
+            ctx3 = _ctx(tmp_path)
+            ctx3.ops.omarchy_lock_background_alpha = 0.35
+            assert OmarchyThemeOp().run(ctx3)
+        assert pushed_into == []  # stock-identical → no churn
+
+
+def test_op_run_lock_style_disabled_no_patch(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+    wal = tmp_path / ".cache" / "wal"
+    wal.mkdir(parents=True)
+    (wal / "colors.json").write_text(json.dumps(_palette()), encoding="utf-8")
+
+    def fake_run(args, **kwargs):
+        if list(args)[:1] == ["omarchy-theme-set-templates"]:
+            nxt = tmp_path / ".local" / "state" / "omarchy" / "current" / "next-theme"
+            nxt.mkdir(parents=True, exist_ok=True)
+            (nxt / "kitty.conf").write_text("x\n", encoding="utf-8")
+        return type("R", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
+
+    with (
+        patch("wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()),
+        patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
+        patch("wallpaperctl.theme.omarchy.have", return_value=True),
+        patch("wallpaperctl.theme.omarchy.run", side_effect=fake_run),
+        patch.object(tom, "patch_shell_lock_style") as patch_mock,
+    ):
+        ctx = _ctx(tmp_path)
+        ctx.ops.omarchy_lock_style = False
+        assert OmarchyThemeOp().run(ctx)
+
+    patch_mock.assert_not_called()
+
+
+# ── aether palette (omarchy theming engine) ──────────────────────────────
+
+
+def _aether_palette() -> dict:
+    return {
+        "special": {"background": "#0b1020", "foreground": "#e6e6e6", "cursor": "#e6e6e6"},
+        "colors": {f"color{i}": f"#{i:02x}{i:02x}{i:02x}" for i in range(16)},
+    }
+
+
+def test_op_run_uses_aether_palette(monkeypatch, tmp_path):
+    """Aether does the color science; colors.toml follows its palette."""
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+    wal = tmp_path / ".cache" / "wal"
+    wal.mkdir(parents=True)
+    (wal / "colors.json").write_text(json.dumps(_palette()), encoding="utf-8")
+
+    with (
+        patch(
+            "wallpaperctl.theme.omarchy.extract_palette",
+            return_value=_aether_palette(),
+        ) as extract_mock,
+        patch("wallpaperctl.theme.omarchy.load_colors_json") as load_mock,
+        patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
+    ):
+        assert OmarchyThemeOp().run(_ctx(tmp_path))
+
+    extract_mock.assert_called_once()
+    load_mock.assert_not_called()
+    theme_dir = tmp_path / ".config" / "omarchy" / "themes" / THEME_SLUG
+    text = (theme_dir / "colors.toml").read_text(encoding="utf-8")
+    assert 'background = "#0b1020"' in text
+
+
+def test_op_run_falls_back_to_wallust_palette(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+
+    with (
+        patch("wallpaperctl.theme.omarchy.extract_palette", return_value=None),
+        patch(
+            "wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()
+        ),
+        patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
+    ):
+        assert OmarchyThemeOp().run(_ctx(tmp_path))
+
+    theme_dir = tmp_path / ".config" / "omarchy" / "themes" / THEME_SLUG
+    text = (theme_dir / "colors.toml").read_text(encoding="utf-8")
+    assert 'background = "#101315"' in text
+
+
+def test_op_run_aether_extract_disabled(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    _theme_state(tmp_path, THEME_SLUG)
+
+    with (
+        patch("wallpaperctl.theme.omarchy.extract_palette") as extract_mock,
+        patch(
+            "wallpaperctl.theme.omarchy.load_colors_json", return_value=_palette()
+        ),
+        patch("wallpaperctl.theme.omarchy.omarchy_available", return_value=True),
+    ):
+        ctx = _ctx(tmp_path)
+        ctx.ops.aether_extract = False
+        assert OmarchyThemeOp().run(ctx)
+
+    extract_mock.assert_not_called()
 
 
 # ── setup bootstrap ──────────────────────────────────────────────────────

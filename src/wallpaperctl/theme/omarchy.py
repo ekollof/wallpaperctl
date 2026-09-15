@@ -34,6 +34,7 @@ from wallpaperctl.omarchy import (
     user_theme_dir,
     user_themes_dir,
 )
+from wallpaperctl.theme.aether import extract_palette
 from wallpaperctl.theme.base import debug_op
 from wallpaperctl.theme.cosmic import pick_accent
 from wallpaperctl.theme.pywalfox import load_colors_json
@@ -743,6 +744,156 @@ def sync_opencode_theme(ctx: WallpaperContext) -> bool:
     return True
 
 
+def dynamic_theme_palette(ctx: WallpaperContext) -> dict | None:
+    """Palette for the dynamic theme: Aether when available, wallust otherwise.
+
+    Aether (omarchy's theming engine) does the color science — median-cut
+    extraction modes, OKLab tuning — read-only via its headless CLI; the
+    full ``omarchy theme set`` path stays out (it reloads Hyprland and
+    restarts the session flow). wallust's colors.json remains the fallback
+    and still feeds ~/.cache/wal consumers (pywalfox, starship).
+    """
+    image = ctx.image_path
+    if getattr(ctx.ops, "aether_extract", True) and image is not None and image.is_file():
+        palette = extract_palette(
+            image,
+            mode=getattr(ctx.ops, "aether_extract_mode", "normal") or "normal",
+            force_light=bool(getattr(ctx.ops, "aether_light_mode", False)),
+        )
+        if palette:
+            return palette
+        debug_op(
+            "omarchy",
+            "aether palette unavailable; using the wallust palette",
+            ctx,
+        )
+    return load_colors_json()
+
+
+# ── lock screen style ─────────────────────────────────────────────────────
+
+# [lock] keys wallpaperctl manages, compared numerically (omarchy's template
+# writes them as bare floats — background-alpha 0.8, border-alpha 1.0,
+# selection-alpha 0.45 — and placeholder as a resolved hex mix).
+_LOCK_ALPHA_KEYS = ("background-alpha", "border-alpha", "selection-alpha")
+
+_SECTION_LOCK = r"[ \t]*\[(?P<section>[^]]+)\][ \t]*$"
+_SECTION_SLICE_RE = re.compile(
+    "(?ms)^" + _SECTION_LOCK + "\n(?P<body>.*?)"
+    + "(?=^[ \t]*\\[[^]]+\\][ \t]*$|\\Z)"
+)
+
+
+def _lock_section_slice(text: str, section: str) -> re.Match[str] | None:
+    for match in _SECTION_SLICE_RE.finditer(text):
+        if match.group("section").strip() == section:
+            return match
+    return None
+
+
+def _lock_knob_values(mapping: dict[str, str], ops) -> dict[str, str]:
+    """Palette-resolved [lock] values wallpaperctl manages."""
+    mix = int(getattr(ops, "omarchy_lock_placeholder_mix", 34))
+    fg = (mapping.get("foreground") or "").strip() or "#cccccc"
+    bg = (mapping.get("background") or "").strip() or "#101010"
+    return {
+        "background-alpha": f'{float(getattr(ops, "omarchy_lock_background_alpha", 0.8)):g}',
+        "border-alpha": f'{float(getattr(ops, "omarchy_lock_border_alpha", 1.0)):g}',
+        "selection-alpha": f'{float(getattr(ops, "omarchy_lock_selection_alpha", 0.45)):g}',
+        "placeholder": _mix_hex(fg, bg, mix / 100),
+    }
+
+
+def _lock_values_differ(section_body: str, values: dict[str, str]) -> bool:
+    for key, wanted in values.items():
+        match = re.search(
+            rf"(?m)^[ \t]*{re.escape(key)}[ \t]*=[ \t]*(\S[^\n]*)$",
+            section_body,
+        )
+        if match is None:
+            continue  # key unknown to this omarchy version — leave alone
+        current = match.group(1).strip()
+        if key in _LOCK_ALPHA_KEYS:
+            try:
+                if abs(float(current) - float(wanted)) < 1e-9:
+                    continue
+            except ValueError:
+                pass
+        elif current.lower().strip('"') == wanted.lower():
+            continue
+        return True
+    return False
+
+
+def patch_shell_lock_style(shell_path: Path, values: dict[str, str]) -> bool:
+    """Replace [lock] alpha/placeholder values in a generated shell.toml.
+
+    Surgical: only the keys wallpaperctl manages are touched, so omarchy
+    template updates keep their other lock settings. Returns True when the
+    file changed. Missing keys (future omarchy) are skipped.
+    """
+    try:
+        text = shell_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    slice_match = _lock_section_slice(text, "lock")
+    if slice_match is None:
+        return False
+    body = slice_match.group("body")
+    if not _lock_values_differ(body, values):
+        return False
+
+    for key, wanted in values.items():
+        match = re.search(
+            rf"(?m)^[ \t]*{re.escape(key)}([ \t]*)=[ \t]*\S[^\n]*$", body
+        )
+        if match is None:
+            continue
+        padding = " " * max(len(match.group(1)), 1)
+        shown = wanted if key in _LOCK_ALPHA_KEYS else f'"{wanted}"'
+        body = re.sub(
+            rf"(?m)^[ \t]*{re.escape(key)}([ \t]*)=[ \t]*\S[^\n]*$",
+            f"{key}{padding}= {shown}",
+            body,
+            count=1,
+        )
+    new_text = (
+        text[: slice_match.start("body")] + body + text[slice_match.end("body") :]
+    )
+    tmp = shell_path.with_suffix(".toml.lock-style.tmp")
+    try:
+        tmp.write_text(new_text, encoding="utf-8")
+        os.replace(tmp, shell_path)
+    except OSError as e:
+        log.debug("omarchy theme: lock style patch failed: %s", e)
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+    return True
+
+
+def sync_shell_lock_style(ctx: WallpaperContext, mapping: dict[str, str]) -> bool:
+    """Apply the configured lock style to the generated shell.toml.
+
+    The [lock] card of omarchy-shell's lock screen is themed through
+    shell.toml, already palette-resolved; this bends the managed knobs
+    (alphas and the placeholder mix) toward the user's ops.toml. Returns
+    True when the section changed and the running shell needs a theme push.
+    """
+    if not getattr(ctx.ops, "omarchy_lock_style", True):
+        return False
+    current, _ = _current_theme_dirs()
+    shell_path = current / "shell.toml"
+    if not shell_path.is_file():
+        return False
+    changed = patch_shell_lock_style(shell_path, _lock_knob_values(mapping, ctx.ops))
+    if changed:
+        debug_op("omarchy", "lock screen style patched into shell.toml", ctx)
+    return changed
+
+
 class OmarchyThemeOp:
     name = "omarchy"
 
@@ -799,9 +950,13 @@ class OmarchyThemeOp:
         theme_dir = user_theme_dir(slug)
         debug_op(self.name, f"updating dynamic theme at {theme_dir}", ctx)
 
-        colors = load_colors_json()
+        colors = dynamic_theme_palette(ctx)
         if not colors:
-            debug_op(self.name, "no ~/.cache/wal/colors.json (wallust op failed?)", ctx)
+            debug_op(
+                self.name,
+                "no palette (aether unavailable and no ~/.cache/wal/colors.json)",
+                ctx,
+            )
             return False
 
         strategy = (
@@ -841,6 +996,15 @@ class OmarchyThemeOp:
             and not palette_changed
         ):
             debug_op(self.name, "palette unchanged; skipping app retint", ctx)
+            # Lock style can change without a palette change (ops.toml knobs,
+            # or a full omarchy theme set restoring stock values in between).
+            if sync_shell_lock_style(ctx, mapping):
+                current, _ = _current_theme_dirs()
+                shell = current / "shell.toml"
+                apply_shell_theme_live(
+                    colors_file,
+                    shell if shell.is_file() else None,
+                )
             from wallpaperctl.theme.terminal_opacity import (
                 apply_terminal_background_opacity,
                 reload_terminals_for_opacity,
@@ -851,6 +1015,7 @@ class OmarchyThemeOp:
                 reload_terminals_for_opacity()
                 if have("omarchy-restart-terminal"):
                     run(["omarchy-restart-terminal"], timeout=20)
+            return True
         else:
             from wallpaperctl.omarchy_watch import (
                 restore_monitor_transforms,
@@ -907,7 +1072,9 @@ class OmarchyThemeOp:
             if palette_changed:
                 _render_starship_from_theme()
 
-        if palette_changed:
+        lock_style_changed = sync_shell_lock_style(ctx, mapping)
+
+        if palette_changed or lock_style_changed:
             current, _ = _current_theme_dirs()
             colors = current / "colors.toml"
             shell = current / "shell.toml"

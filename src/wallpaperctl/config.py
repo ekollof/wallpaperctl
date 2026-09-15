@@ -92,6 +92,26 @@ class OpsConfig:
     omarchy_refresh_opencode: bool = True
     # Skip live retint when the rendered palette is unchanged (e.g. -R).
     omarchy_skip_unchanged: bool = True
+    # Omarchy lock screen style (omarchy-shell's [lock] card in shell.toml).
+    # wallpaperctl patches the palette-resolved [lock] values of the generated
+    # shell.toml and pushes them live, so the lock screen follows the wallpaper
+    # palette with these alphas/tones. See theme/omarchy.py lock style.
+    omarchy_lock_style: bool = True
+    # Stock omarchy defaults: card 0.8, borders 1.0, selection 0.45, and the
+    # placeholder mixed 34% from foreground toward background.
+    omarchy_lock_background_alpha: float = 0.8
+    omarchy_lock_border_alpha: float = 1.0
+    omarchy_lock_selection_alpha: float = 0.45
+    omarchy_lock_placeholder_mix: int = 34
+    # Omarchy only: let Aether (omarchy's theming engine) extract the dynamic
+    # theme palette from the wallpaper — 8 extraction modes, OKLab tuning —
+    # instead of wallust's kmeans palette. Falls back to wallust when aether
+    # is not installed. See theme/aether.py.
+    aether_extract: bool = True
+    # normal | monochromatic | analogous | pastel | material | colorful |
+    # muted | bright
+    aether_extract_mode: str = "normal"
+    aether_light_mode: bool = False
     cde_restart_dtwm: bool = True
     enable_pywalfox: bool = True
     pywalfox_improve_contrast: bool = True
