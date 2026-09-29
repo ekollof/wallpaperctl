@@ -26,7 +26,7 @@ fallback_colors = ["#FFFFFF", "#000000", "#D3D3D3", "#808080"]
 # harddark - harddark16 - harddarkcomp - harddarkcomp16
 # softdark - softdark16 - softdarkcomp - softdarkcomp16
 # softlight - softlight16 - softlightcomp - softlightcomp16
-palette = "kmeans"
+palette = "dark16"
 
 # Ensures a "readable contrast" (OPTIONAL, disabled by default)
 # Should only be enabled when you notice an unreadable contrast frequently happening

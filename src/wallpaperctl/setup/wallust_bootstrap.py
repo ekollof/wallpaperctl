@@ -208,7 +208,7 @@ def bootstrap_wallust(
     oc_rc = bootstrap_opencode(force=force)
 
     print()
-    print("wallpaperctl runs: wallust run --backend wal --palette kmeans <image>")
+    print("wallpaperctl runs: wallust run --backend wal --palette dark16 <image>")
     print("(your wallust.toml backend/palette defaults apply when using wallust CLI directly)")
     return oc_rc
 
@@ -311,7 +311,7 @@ def smoke_test_wallust(image: Path | None = None) -> int:
         return 0
     print(f"Smoke test: wallust run {img}")
     r = run(
-        ["wallust", "run", "--backend", "wal", "--palette", "kmeans", str(img)],
+        ["wallust", "run", "--backend", "wal", "--palette", "dark16", str(img)],
         timeout=60,
     )
     if r.returncode != 0:

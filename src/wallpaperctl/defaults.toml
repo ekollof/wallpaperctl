@@ -29,7 +29,7 @@ pywalfox = true
 
 [ops]
 wallust_backend = "wal"
-wallust_palette = "kmeans"
+wallust_palette = "dark16"
 # Enforce WCAG contrast on the palette after wallust runs (wallust's own
 # check_contrast is only a mild background-relative check). Terminal text
 # slots get wallust_text_contrast, ANSI accents wallust_accent_contrast.

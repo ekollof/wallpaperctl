@@ -16,7 +16,7 @@ continue_on_error = true
 # rgb_color_strategy = "warmest"
 #   # least_blue | warmest | most_saturated | coolest | brightest | fixed
 # wallust_backend = "wal"
-# wallust_palette = "kmeans"
+# wallust_palette = "dark16"
 # cosmic_theme_mode = "surfaces"       # accent | surfaces | full
 # cosmic_accent_softness = 0.42
 # cosmic_accent_desaturate = 0.22
