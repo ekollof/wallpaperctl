@@ -8,7 +8,12 @@ import sys
 from pathlib import Path
 
 from wallpaperctl import __version__
-from wallpaperctl.app import apply_wallpaper, load_current_wallpaper, save_current_wallpaper
+from wallpaperctl.app import (
+    apply_wallpaper,
+    load_current_wallpaper,
+    run_theme_worker,
+    save_current_wallpaper,
+)
 from wallpaperctl.config import load_api_config, load_ops_config
 from wallpaperctl.detect.desktop import detect_desktop
 from wallpaperctl.detect.tools import detect_tools
@@ -35,6 +40,7 @@ def main(argv: list[str] | None = None) -> int:
         "random",
         "fetch",
         "reload",
+        "__theme__",
         "clear-cache",
         "detect",
         "ops",
@@ -113,6 +119,11 @@ def _classic_main(argv: list[str]) -> int:
         help="Path to a specific wallpaper file",
     )
     parser.add_argument(
+        "--sync",
+        action="store_true",
+        help="Run theme ops in the foreground (default: background); for debugging",
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"wallpaperctl {__version__}",
@@ -151,6 +162,7 @@ def _classic_main(argv: list[str]) -> int:
             ops=ops,
             debug=debug,
             animated=args.animated,
+            sync=args.sync,
         )
     finally:
         lock.release()
@@ -166,6 +178,7 @@ def _run_action(
     debug: bool,
     animated: bool = False,
     exclude: str | None = None,
+    sync: bool = False,
 ) -> int:
     photographer_name = ""
     photographer_username = ""
@@ -244,6 +257,7 @@ def _run_action(
                     wallpaper,
                     ops,
                     debug=debug,
+                    sync=sync,
                 )
                 return 0 if ok else 1
             print(
@@ -287,6 +301,7 @@ def _run_action(
         photographer_username=photographer_username,
         provider_name=provider_name,
         debug=debug,
+        sync=sync,
     )
     return 0 if ok else 1
 
@@ -297,12 +312,22 @@ def _subcommand_main(argv: list[str]) -> int:
 
     p_set = sub.add_parser("set", help="Set a specific wallpaper")
     p_set.add_argument("path")
+    p_set.add_argument(
+        "--sync",
+        action="store_true",
+        help="Run theme ops in the foreground (default: background); for debugging",
+    )
 
     p_random = sub.add_parser("random", help="Pick random local wallpaper")
     p_random.add_argument(
         "--animated",
         action="store_true",
         help="Pick only from ~/Wallpapers/animated",
+    )
+    p_random.add_argument(
+        "--sync",
+        action="store_true",
+        help="Run theme ops in the foreground (default: background); for debugging",
     )
 
     p_fetch = sub.add_parser("fetch", help="Fetch remote wallpaper")
@@ -318,8 +343,25 @@ def _subcommand_main(argv: list[str]) -> int:
         action="store_true",
         help="Fetch a video wallpaper from Pexels/Pixabay into ~/Wallpapers/animated",
     )
+    p_fetch.add_argument(
+        "--sync",
+        action="store_true",
+        help="Run theme ops in the foreground (default: background); for debugging",
+    )
 
-    sub.add_parser("reload", help="Reload ~/.wallpaper")
+    p_reload = sub.add_parser("reload", help="Reload ~/.wallpaper")
+    p_reload.add_argument(
+        "--sync",
+        action="store_true",
+        help="Run theme ops in the foreground (default: background); for debugging",
+    )
+    # Internal: detached theme-phase worker spawned by apply_wallpaper.
+    p_theme = sub.add_parser("__theme__", help=argparse.SUPPRESS)
+    p_theme.add_argument("path")
+    p_theme.add_argument("--photographer-name", default="")
+    p_theme.add_argument("--photographer-username", default="")
+    p_theme.add_argument("--provider-name", default="")
+    p_theme.add_argument("--debug", action="store_true")
     sub.add_parser("clear-cache", help="Clear URL + hash caches (same as: cache clear)")
     p_cache = sub.add_parser(
         "cache",
@@ -529,6 +571,18 @@ def _subcommand_main(argv: list[str]) -> int:
     if args.cmd == "version":
         print(f"wallpaperctl {__version__}")
         return 0
+    if args.cmd == "__theme__":
+        # Detached worker: no main lock (foreground already released it).
+        # Stale runs self-skip inside run_theme_worker.
+        ensure_debug_logging(debug or args.debug)
+        return run_theme_worker(
+            Path(args.path),
+            ops,
+            photographer_name=args.photographer_name,
+            photographer_username=args.photographer_username,
+            provider_name=args.provider_name,
+            debug=debug or args.debug,
+        )
     if args.cmd == "detect":
         de = detect_desktop()
         tools = detect_tools(de, strict=False)
@@ -660,6 +714,7 @@ def _subcommand_main(argv: list[str]) -> int:
                 ops=ops,
                 debug=debug,
                 animated=False,
+                sync=args.sync,
             )
         if args.cmd == "random":
             return _run_action(
@@ -670,6 +725,7 @@ def _subcommand_main(argv: list[str]) -> int:
                 ops=ops,
                 debug=debug,
                 animated=args.animated,
+                sync=args.sync,
             )
         if args.cmd == "fetch":
             return _run_action(
@@ -681,6 +737,7 @@ def _subcommand_main(argv: list[str]) -> int:
                 ops=ops,
                 debug=debug,
                 animated=args.animated,
+                sync=args.sync,
             )
         if args.cmd == "reload":
             return _run_action(
@@ -690,6 +747,7 @@ def _subcommand_main(argv: list[str]) -> int:
                 path=None,
                 ops=ops,
                 debug=debug,
+                sync=args.sync,
             )
     finally:
         lock.release()

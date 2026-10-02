@@ -115,3 +115,6 @@ wallust_timeout = 10
 openrgb_timeout = 5
 max_retries = 3
 retry_delay = 1.0
+# Async theme ops: setters return immediately, theming continues in background.
+# --sync forces a foreground run (debugging). Set false to always run sync.
+background_theme = true

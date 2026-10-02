@@ -174,6 +174,9 @@ class OpsConfig:
     openrgb_timeout: int = 5
     max_retries: int = 3
     retry_delay: float = 1.0
+    # Run theme ops in a detached background worker after the wallpaper is
+    # set, so the CLI returns immediately. --sync forces foreground runs.
+    background_theme: bool = True
 
     # Paths
 

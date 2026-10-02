@@ -29,7 +29,7 @@ def test_apply_wallpaper_hard_fails_when_no_setter_succeeds(tmp_path: Path) -> N
         patch("wallpaperctl.app.run_theme_ops") as theme,
         patch("wallpaperctl.app.safe_notify"),
     ):
-        ok = apply_wallpaper(img, ops)
+        ok = apply_wallpaper(img, ops, sync=True)
     assert ok is False
     theme.assert_not_called()
 
@@ -46,7 +46,7 @@ def test_apply_wallpaper_hard_fails_when_no_setter_applies(tmp_path: Path) -> No
         patch("wallpaperctl.app.run_theme_ops") as theme,
         patch("wallpaperctl.app.safe_notify"),
     ):
-        ok = apply_wallpaper(img, ops)
+        ok = apply_wallpaper(img, ops, sync=True)
     assert ok is False
     theme.assert_not_called()
 
@@ -63,6 +63,6 @@ def test_apply_wallpaper_runs_theme_ops_after_successful_set(tmp_path: Path) -> 
         patch("wallpaperctl.app.run_theme_ops", return_value=(0, 3)) as theme,
         patch("wallpaperctl.app.safe_notify"),
     ):
-        ok = apply_wallpaper(img, ops)
+        ok = apply_wallpaper(img, ops, sync=True)
     assert ok is True
     theme.assert_called_once()
