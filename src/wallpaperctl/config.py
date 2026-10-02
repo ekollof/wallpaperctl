@@ -127,7 +127,10 @@ class OpsConfig:
     cosmic_accent_desaturate: float = 0.22
 
     wallust_backend: str = "wal"
-    wallust_palette: str = "dark16"
+    # "auto" resolves per installed wallust major (v3 -> dark16, v4 ->
+    # kmeans); explicit values valid for that major pass through. See
+    # wallust_compat.resolve_wallust_palette.
+    wallust_palette: str = "auto"
     # Post-wallust WCAG enforcement on the canonical palette (terminal text,
     # dim/comments, ANSI accents). See theme/palette_contrast.py.
     wallust_fix_contrast: bool = True

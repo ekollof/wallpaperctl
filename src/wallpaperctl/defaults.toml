@@ -29,7 +29,8 @@ pywalfox = true
 
 [ops]
 wallust_backend = "wal"
-wallust_palette = "dark16"
+# auto = per installed wallust major (v3 dark16, v4 kmeans)
+wallust_palette = "auto"
 # Enforce WCAG contrast on the palette after wallust runs (wallust's own
 # check_contrast is only a mild background-relative check). Terminal text
 # slots get wallust_text_contrast, ANSI accents wallust_accent_contrast.

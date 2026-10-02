@@ -5,7 +5,11 @@ from __future__ import annotations
 from wallpaperctl.context import WallpaperContext
 from wallpaperctl.theme.base import debug_op
 from wallpaperctl.theme.palette_contrast import fix_installed_palette
-from wallpaperctl.util import have, run
+from wallpaperctl.util import have, home, run
+from wallpaperctl.wallust_compat import (
+    normalize_wallust_config_palette,
+    resolve_wallust_palette,
+)
 
 
 class WallustOp:
@@ -19,7 +23,11 @@ class WallustOp:
             debug_op(self.name, "wallust not found, skipping", ctx)
             return True
         backend = ctx.ops.wallust_backend
-        palette = ctx.ops.wallust_palette
+        palette = resolve_wallust_palette(ctx.ops.wallust_palette)
+        if palette != ctx.ops.wallust_palette:
+            normalize_wallust_config_palette(
+                home() / ".config" / "wallust" / "wallust.toml"
+            )
         debug_op(
             self.name,
             f"generating scheme backend={backend} palette={palette}",

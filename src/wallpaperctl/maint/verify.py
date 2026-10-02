@@ -247,7 +247,12 @@ def _verify_omarchy(ops: OpsConfig) -> bool:
     )
     if stale:
         print("✗ wallust palette: OLDER than current wallpaper — wallust failed")
-        print(f"  → check: wallust run --backend wal --palette dark16 {wallpaper}")
+        from wallpaperctl.wallust_compat import resolve_wallust_palette
+
+        print(
+            "  → check: wallust run --backend wal --palette "
+            f"{resolve_wallust_palette('auto')} {wallpaper}"
+        )
         ok = False
     else:
         print("✓ wallust palette: current")

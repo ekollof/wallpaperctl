@@ -40,7 +40,14 @@ def omarchy_config_installed() -> bool:
     pkg = _packaged_wallust_root()
     if pkg is None or not cfg.is_file():
         return False
-    return not _files_differ(pkg / "wallust-omarchy.toml", cfg)
+    from wallpaperctl.wallust_compat import canonical_config_text
+
+    try:
+        current = canonical_config_text(cfg.read_text(encoding="utf-8"))
+        packaged = canonical_config_text((pkg / "wallust-omarchy.toml").read_text(encoding="utf-8"))
+    except OSError:
+        return False
+    return current == packaged
 
 
 def install_omarchy_wallust_config() -> int:
@@ -60,7 +67,7 @@ def install_omarchy_wallust_config() -> int:
     cfg_dir.mkdir(parents=True, exist_ok=True)
     target = cfg_dir / "wallust.toml"
     if target.is_file():
-        if not _files_differ(src, target):
+        if omarchy_config_installed():
             print("wallust.toml: already the Omarchy palette-only variant")
             return 0
         backup = target.with_suffix(".toml.bak-wallpaperctl")
@@ -72,6 +79,9 @@ def install_omarchy_wallust_config() -> int:
         else:
             print(f"backup:  {backup} (kept)")
     shutil.copy2(src, target)
+    from wallpaperctl.wallust_compat import normalize_wallust_config_palette
+
+    normalize_wallust_config_palette(target)
     print(f"wrote:   {target}  (palette-only; app theming handled by Omarchy)")
     return 0
 
@@ -170,6 +180,9 @@ def bootstrap_wallust(
                         print(f"backup:  {backup}")
             if not templates_only:
                 shutil.copy2(pkg / "wallust.toml", cfg)
+                from wallpaperctl.wallust_compat import normalize_wallust_config_palette
+
+                normalize_wallust_config_palette(cfg)
                 print(f"wrote:   {cfg}")
 
     # --- templates (user-editable: fill in missing, refresh only with force) ---
@@ -208,7 +221,12 @@ def bootstrap_wallust(
     oc_rc = bootstrap_opencode(force=force)
 
     print()
-    print("wallpaperctl runs: wallust run --backend wal --palette dark16 <image>")
+    from wallpaperctl.wallust_compat import resolve_wallust_palette
+
+    print(
+        "wallpaperctl runs: wallust run --backend wal --palette "
+        f"{resolve_wallust_palette('auto')} <image>"
+    )
     print("(your wallust.toml backend/palette defaults apply when using wallust CLI directly)")
     return oc_rc
 
@@ -310,8 +328,11 @@ def smoke_test_wallust(image: Path | None = None) -> int:
         print("No image for smoke test (set a wallpaper first or pass a path).")
         return 0
     print(f"Smoke test: wallust run {img}")
+    from wallpaperctl.wallust_compat import resolve_wallust_palette
+
+    palette = resolve_wallust_palette("auto")
     r = run(
-        ["wallust", "run", "--backend", "wal", "--palette", "dark16", str(img)],
+        ["wallust", "run", "--backend", "wal", "--palette", palette, str(img)],
         timeout=60,
     )
     if r.returncode != 0:
