@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import sys
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
 
@@ -84,8 +85,16 @@ def _run_op_once(op, ctx: WallpaperContext, timeout: float) -> bool:
             return False
 
 
-def run_theme_ops(ctx: WallpaperContext) -> tuple[int, int]:
-    """Returns (failed, total_enabled)."""
+def run_theme_ops(
+    ctx: WallpaperContext,
+    abort_if: Callable[[], bool] | None = None,
+) -> tuple[int, int]:
+    """Returns (failed, total_enabled).
+
+    When ``abort_if`` reports True (a newer wallpaper superseded this run),
+    remaining ops are skipped so a stale background worker stops at the next
+    op boundary instead of overwriting the current theme.
+    """
     if not ctx.ops.operations_enabled:
         log.debug("Theme operations disabled globally")
         return 0, 0
@@ -95,10 +104,22 @@ def run_theme_ops(ctx: WallpaperContext) -> tuple[int, int]:
     max_retries = max(1, int(ctx.ops.max_retries))
     retry_delay = float(ctx.ops.retry_delay)
 
+    def _aborted() -> bool:
+        if abort_if is None:
+            return False
+        try:
+            return bool(abort_if())
+        except Exception as e:
+            log.debug("Theme abort check failed (ignoring): %s", e)
+            return False
+
     for op in THEME_OPS:
         if not op.enabled(ctx):
             log.debug("Skipping theme op %s (disabled/N/A)", op.name)
             continue
+        if _aborted():
+            log.debug("Theme ops aborted (superseded by a newer wallpaper)")
+            break
         total += 1
         timeout = _timeout_for(op.name, ctx)
         # Omarchy retint is one-shot: retrying stacks Kitty SIGUSR1.

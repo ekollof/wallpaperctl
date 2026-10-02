@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from wallpaperctl.app import (
+    _run_theme_locked,
     _wants_sync,
     apply_wallpaper,
     run_theme_worker,
@@ -194,3 +195,126 @@ def test_cli_set_sync_flag(monkeypatch, tmp_path: Path) -> None:
     seen.clear()
     assert cli_mod.main(["set", str(img)]) == 0
     assert seen.get("sync") is False
+
+
+class _FakeThemeLock:
+    """Captures the lock name; controllable hold result."""
+
+    instances: list = []
+    hold_result: bool = True
+
+    def __init__(self, name: str = "wallpaper") -> None:
+        self.name = name
+        _FakeThemeLock.instances.append(self)
+
+    def acquire_waiting(self, timeout=0.0, poll=0.0, abort_if=None) -> bool:
+        return _FakeThemeLock.hold_result
+
+    def release(self) -> None:
+        pass
+
+
+def _ctx_for(img):
+    from wallpaperctl.context import WallpaperContext
+
+    return WallpaperContext(
+        path=img,
+        de=DesktopEnvironment(),
+        ops=_ops(img.parent),
+    )
+
+
+def test_run_theme_locked_uses_theme_lock(tmp_path: Path, monkeypatch) -> None:
+    from wallpaperctl import app as app_mod
+
+    _FakeThemeLock.instances.clear()
+    _FakeThemeLock.hold_result = True
+    monkeypatch.setattr(app_mod, "WallpaperLock", _FakeThemeLock)
+    img = _img(tmp_path)
+    ctx = _ctx_for(img)
+    with patch("wallpaperctl.app.run_theme_ops", return_value=(0, 2)) as theme:
+        assert _run_theme_locked(ctx, abort_on_superseded=False) == (0, 2)
+    theme.assert_called_once()
+    assert _FakeThemeLock.instances
+    assert all(lock.name == "wallpaper-theme" for lock in _FakeThemeLock.instances)
+
+
+def test_run_theme_locked_skips_stale_without_running(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from wallpaperctl import app as app_mod
+
+    _FakeThemeLock.instances.clear()
+    _FakeThemeLock.hold_result = True
+    monkeypatch.setattr(app_mod, "WallpaperLock", _FakeThemeLock)
+    old = _img(tmp_path)
+    ops = _ops(tmp_path)
+    newer = tmp_path / "new.jpg"
+    newer.write_bytes(b"new")
+    Path(ops.current_wallpaper_file).write_text(str(newer.resolve()) + "\n")
+    ctx = _ctx_for(old)
+    ctx.ops = ops
+    with patch("wallpaperctl.app.run_theme_ops") as theme:
+        assert _run_theme_locked(ctx, abort_on_superseded=True) == (0, 0)
+    theme.assert_not_called()
+
+
+def test_run_theme_locked_runs_anyway_when_lock_busy(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from wallpaperctl import app as app_mod
+
+    _FakeThemeLock.instances.clear()
+    _FakeThemeLock.hold_result = False
+    monkeypatch.setattr(app_mod, "WallpaperLock", _FakeThemeLock)
+    img = _img(tmp_path)
+    Path(_ops(tmp_path).current_wallpaper_file).write_text(
+        str(img.resolve()) + "\n"
+    )
+    ops = _ops(tmp_path)
+    ctx = _ctx_for(img)
+    ctx.ops = ops
+    with patch("wallpaperctl.app.run_theme_ops", return_value=(0, 1)) as theme:
+        assert _run_theme_locked(ctx, abort_on_superseded=True) == (0, 1)
+    theme.assert_called_once()
+
+
+def test_sync_apply_holds_theme_lock(tmp_path: Path, monkeypatch) -> None:
+    from wallpaperctl import app as app_mod
+
+    _FakeThemeLock.instances.clear()
+    _FakeThemeLock.hold_result = True
+    monkeypatch.setattr(app_mod, "WallpaperLock", _FakeThemeLock)
+    img = _img(tmp_path)
+    ops = _ops(tmp_path)
+    de = DesktopEnvironment(xfce=True)
+    with (
+        patch("wallpaperctl.app.detect_desktop", return_value=de),
+        patch("wallpaperctl.app.run_wallpaper_setters", return_value=(1, 1)),
+        patch("wallpaperctl.app.run_theme_ops", return_value=(0, 1)),
+        patch("wallpaperctl.app.safe_notify"),
+    ):
+        assert apply_wallpaper(img, ops, sync=True) is True
+    assert _FakeThemeLock.instances
+    assert all(lock.name == "wallpaper-theme" for lock in _FakeThemeLock.instances)
+
+
+def test_worker_superseded_mid_run_reports_nothing(tmp_path: Path) -> None:
+    img = _img(tmp_path)
+    ops = _ops(tmp_path)
+    Path(ops.current_wallpaper_file).write_text(str(img.resolve()) + "\n")
+    de = DesktopEnvironment()
+
+    def _flip_and_ok(ctx, abort_if=None):
+        newer = tmp_path / "newer.jpg"
+        newer.write_bytes(b"new")
+        Path(ops.current_wallpaper_file).write_text(str(newer.resolve()) + "\n")
+        return (0, 1)
+
+    with (
+        patch("wallpaperctl.app.detect_desktop", return_value=de),
+        patch("wallpaperctl.app.run_theme_ops", side_effect=_flip_and_ok),
+        patch("wallpaperctl.app.safe_notify") as notify,
+    ):
+        assert run_theme_worker(img, ops) == 0
+    notify.assert_not_called()

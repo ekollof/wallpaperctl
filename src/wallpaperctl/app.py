@@ -10,6 +10,7 @@ from pathlib import Path
 from wallpaperctl.config import OpsConfig
 from wallpaperctl.context import WallpaperContext
 from wallpaperctl.detect.desktop import detect_desktop
+from wallpaperctl.lock import WallpaperLock
 from wallpaperctl.media import extract_frame, is_animated
 from wallpaperctl.notify import safe_notify
 from wallpaperctl.set.runner import run_wallpaper_setters
@@ -19,6 +20,10 @@ from wallpaperctl.util import spawn_detached
 log = logging.getLogger("wallpaperctl")
 
 THEME_WORKER_CMD = "__theme__"
+THEME_LOCK_NAME = "wallpaper-theme"
+# Upper bound for waiting on another theme run before degrading to run-anyway
+# (soft failure) rather than blocking --sync forever.
+THEME_LOCK_TIMEOUT = 300.0
 
 
 def save_current_wallpaper(path: Path, ops: OpsConfig) -> None:
@@ -88,7 +93,7 @@ def build_context(
 
 def _report_theme_result(ctx: WallpaperContext, set_ok: int, set_total: int) -> bool:
     """Run theme ops synchronously and report. Returns True (setters won)."""
-    theme_failed, theme_total = run_theme_ops(ctx)
+    theme_failed, theme_total = _run_theme_locked(ctx, abort_on_superseded=False)
 
     set_failed = set_total - set_ok
     total_failed = set_failed + theme_failed
@@ -206,6 +211,50 @@ def apply_wallpaper(
     return _report_theme_result(ctx, set_ok, set_total)
 
 
+def is_superseded(ctx: WallpaperContext, ops: OpsConfig) -> bool:
+    """True when ~/.wallpaper moved on to a newer wallpaper than this run."""
+    try:
+        current = load_current_wallpaper(ops)
+    except (SystemExit, OSError):
+        return False
+    try:
+        return current.resolve() != ctx.path.resolve()
+    except OSError as e:
+        log.debug("Supersede check skipped: %s", e)
+        return False
+
+
+def _run_theme_locked(
+    ctx: WallpaperContext, *, abort_on_superseded: bool
+) -> tuple[int, int]:
+    """Run theme ops under the shared theme lock so runs never overlap.
+
+    With ``abort_on_superseded`` (background workers), a run that is no
+    longer current aborts — while waiting and between ops — instead of
+    overwriting the newer wallpaper's theme.
+    """
+    abort = None
+    if abort_on_superseded:
+
+        def abort() -> bool:
+            return is_superseded(ctx, ctx.ops)
+
+    lock = WallpaperLock(name=THEME_LOCK_NAME)
+    held = lock.acquire_waiting(timeout=THEME_LOCK_TIMEOUT, abort_if=abort)
+    try:
+        if abort is not None and abort():
+            log.debug("Theme run for %s superseded; skipping", ctx.path)
+            return 0, 0
+        if not held:
+            log.warning(
+                "Theme lock busy after %ss; running anyway",
+                THEME_LOCK_TIMEOUT,
+            )
+        return run_theme_ops(ctx, abort_if=abort)
+    finally:
+        lock.release()
+
+
 def run_theme_worker(
     path: Path,
     ops: OpsConfig,
@@ -226,21 +275,13 @@ def run_theme_worker(
     )
     # A newer `set` may have superseded us while we were spawning; don't let
     # a stale palette overwrite the current wallpaper's theme.
-    try:
-        current = load_current_wallpaper(ops)
-        if current.resolve() != ctx.path.resolve():
-            log.debug(
-                "Skipping stale theme worker for %s (current is %s)",
-                ctx.path,
-                current,
-            )
-            return 0
-    except SystemExit:
-        pass
-    except OSError as e:
-        log.debug("Stale-check skipped: %s", e)
-
-    theme_failed, theme_total = run_theme_ops(ctx)
+    theme_failed, theme_total = _run_theme_locked(ctx, abort_on_superseded=True)
+    if is_superseded(ctx, ops):
+        log.debug(
+            "Background theme worker for %s superseded; stopped early",
+            ctx.path,
+        )
+        return 0
     if theme_failed:
         msg = f"Warning: {theme_failed} of {theme_total} theme operations failed"
         print(msg, file=sys.stderr)
