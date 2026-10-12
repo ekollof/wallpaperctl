@@ -318,6 +318,9 @@ def _subcommand_main(argv: list[str]) -> int:
     panel_sub.add_parser("status", help="Print wallpaper information as JSON")
     panel_set = panel_sub.add_parser("set", help="Apply a local file URL from the picker")
     panel_set.add_argument("url")
+    panel_delete = panel_sub.add_parser("delete", help="Replace and delete the confirmed wallpaper")
+    panel_delete.add_argument("path")
+    panel_delete.add_argument("identity")
     p_set.add_argument(
         "--sync",
         action="store_true",
@@ -577,17 +580,28 @@ def _subcommand_main(argv: list[str]) -> int:
     if args.cmd == "omarchy-panel":
         import json
 
-        from wallpaperctl.omarchy_panel import local_file_url, wallpaper_status
+        from wallpaperctl.omarchy_panel import (
+            delete_current_wallpaper,
+            local_file_url,
+            wallpaper_status,
+        )
 
         if args.panel_action == "status":
             print(json.dumps(wallpaper_status(ops)))
+            return 0
+        if args.panel_action == "delete":
+            try:
+                delete_current_wallpaper(ops, args.path, args.identity)
+            except (ValueError, OSError) as e:
+                print(str(e), file=sys.stderr)
+                return 1
             return 0
         try:
             path = local_file_url(args.url)
         except ValueError as e:
             print(str(e), file=sys.stderr)
             return 1
-        return main(["set", str(path), "--sync"])
+        return main(["set", str(path)])
 
     if args.cmd == "version":
         print(f"wallpaperctl {__version__}")

@@ -12,7 +12,7 @@ import pytest
 
 
 @pytest.mark.skipif(not shutil.which("quickshell"), reason="Quickshell is not installed")
-@pytest.mark.parametrize("mode", ["commands", "malformed", "failure"])
+@pytest.mark.parametrize("mode", ["commands", "malformed", "failure", "delete"])
 def test_service_runtime(tmp_path, mode):
     source = Path(__file__).resolve().parents[1] / "src/wallpaperctl/data/omarchy-plugin"
     shutil.copy2(source / "Service.qml", tmp_path / "Service.qml")
@@ -49,12 +49,14 @@ ShellRoot {
         if (backend.error) { console.log("PASS malformed"); Qt.quit() }
         return
       }
-      if (mode === "failure") {
+      if (mode === "failure" || mode === "delete") {
         if (phase === 0 && backend.ready) {
-          backend.setFile("file:///fictional/a%20%23.png"); phase++
+          if (mode === "delete") backend.deleteCurrent("/fictional/aurora.png", "1:2:3:4")
+          else backend.setFile("file:///fictional/a%20%23.png")
+          phase++
         } else if (phase === 1 && !backend.busy && backend.error) {
           if (backend.error.indexOf("private") >= 0) Qt.exit(1)
-          else { console.log("PASS failure"); Qt.quit() }
+          else { console.log("PASS " + mode); Qt.quit() }
         }
         return
       }
@@ -94,14 +96,18 @@ ShellRoot {
     if mode == "commands":
         commands = [json.loads(line) for line in command_log.read_text().splitlines()]
         assert commands == [
-            ["fetch", "--sync", "--animated"],
-            ["random", "--sync"],
-            ["random", "--sync", "--animated"],
-            ["fetch", "--sync"],
+            ["fetch", "--animated"],
+            ["random"],
+            ["random", "--animated"],
+            ["fetch"],
         ]
     if mode == "failure":
         assert json.loads(command_log.read_text()) == [
             "omarchy-panel",
             "set",
             "file:///fictional/a%20%23.png",
+        ]
+    if mode == "delete":
+        assert json.loads(command_log.read_text()) == [
+            "omarchy-panel", "delete", "/fictional/aurora.png", "1:2:3:4"
         ]

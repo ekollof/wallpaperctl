@@ -29,11 +29,12 @@ Item {
     action.running = true
   }
   function randomize(animated, remote) {
-    var args = [remote ? "fetch" : "random", "--sync"]
+    var args = [remote ? "fetch" : "random"]
     if (animated) args.push("--animated")
     run(args)
   }
   function setFile(url) { run(["omarchy-panel", "set", url]) }
+  function deleteCurrent(path, identity) { run(["omarchy-panel", "delete", path, identity]) }
 
   Process {
     id: status
@@ -73,7 +74,9 @@ Item {
     onExited: function(code, exitStatus) {
       watchdog.stop()
       if (code !== 0 && !root.error)
-        root.error = "Wallpaper change failed. Check your library or remote provider configuration, then retry."
+        root.error = action.command[2] === "delete"
+          ? "Delete failed. Refresh and retry; a working replacement in your local library is required."
+          : "Wallpaper change failed. Check your library or remote provider configuration, then retry."
       root.refresh()
     }
     onRunningChanged: if (running) watchdog.restart()

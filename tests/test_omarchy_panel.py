@@ -75,7 +75,7 @@ def test_picker_passes_path_as_one_argument(tmp_path):
     with patch.object(cli, "_run_action", return_value=0) as action:
         assert main(["omarchy-panel", "set", image.as_uri()]) == 0
     assert action.call_args.kwargs["path"] == str(image)
-    assert action.call_args.kwargs["sync"] is True
+    assert action.call_args.kwargs["sync"] is False
 
 
 def test_widget_install_is_idempotent_and_preserves_other_files(tmp_path, monkeypatch):
@@ -107,3 +107,82 @@ def test_widget_install_validation_failure_is_soft(tmp_path, monkeypatch):
         omarchy.return_value.stderr = "unsupported"
         assert not install_wallpaper_widget()
         assert omarchy.call_count == 1
+
+
+def _delete_fixture(tmp_path):
+    from wallpaperctl.omarchy_panel import file_identity
+
+    library = tmp_path / "library"
+    library.mkdir()
+    current = library / "current.png"
+    Image.new("RGB", (10, 10)).save(current)
+    record = tmp_path / "current"
+    record.write_text(str(current))
+    ops = OpsConfig(current_wallpaper_file=str(record), wallpaper_dir=str(library))
+    return ops, current, record, file_identity(current)
+
+
+def test_delete_applies_replacement_before_unlink(tmp_path):
+    from wallpaperctl.omarchy_panel import delete_current_wallpaper
+
+    ops, current, record, identity = _delete_fixture(tmp_path)
+    replacement = current.with_name("replacement.png")
+    Image.new("RGB", (10, 10)).save(replacement)
+
+    def apply(path, ops, sync):
+        assert current.exists()
+        assert path == replacement
+        assert record.read_text().strip() == str(replacement)
+        assert not sync
+        return True
+
+    with patch("wallpaperctl.omarchy_panel.apply_wallpaper", side_effect=apply):
+        delete_current_wallpaper(ops, str(current), identity)
+    assert not current.exists()
+    assert replacement.exists()
+    assert record.read_text().strip() == str(replacement)
+
+
+@pytest.mark.parametrize("failure", ["no_replacement", "apply_fails", "stale_path", "stale_file"])
+def test_delete_keeps_file_when_preconditions_fail(tmp_path, failure):
+    from wallpaperctl.omarchy_panel import delete_current_wallpaper
+
+    ops, current, record, identity = _delete_fixture(tmp_path)
+    if failure != "no_replacement":
+        Image.new("RGB", (10, 10)).save(current.with_name("replacement.png"))
+    if failure == "stale_file":
+        current.write_bytes(b"changed since confirmation")
+    expected = str(current) if failure != "stale_path" else str(current.with_name("other.png"))
+    with patch("wallpaperctl.omarchy_panel.apply_wallpaper", return_value=False) as apply:
+        with pytest.raises(ValueError):
+            delete_current_wallpaper(ops, expected, identity)
+    assert current.exists()
+    assert record.read_text().strip() == str(current)
+    if failure != "apply_fails":
+        apply.assert_not_called()
+
+
+def test_delete_does_not_follow_alias_as_replacement(tmp_path):
+    from wallpaperctl.omarchy_panel import delete_current_wallpaper
+
+    ops, current, record, identity = _delete_fixture(tmp_path)
+    current.with_name("alias.png").symlink_to(current)
+    with pytest.raises(ValueError, match="No replacement"):
+        delete_current_wallpaper(ops, str(current), identity)
+    assert current.exists()
+
+
+def test_delete_rechecks_identity_after_applying(tmp_path):
+    from wallpaperctl.omarchy_panel import delete_current_wallpaper
+
+    ops, current, record, identity = _delete_fixture(tmp_path)
+    Image.new("RGB", (10, 10)).save(current.with_name("replacement.png"))
+
+    def apply(*args, **kwargs):
+        current.write_bytes(b"new file contents")
+        return True
+
+    with patch("wallpaperctl.omarchy_panel.apply_wallpaper", side_effect=apply):
+        with pytest.raises(ValueError, match="Original file changed"):
+            delete_current_wallpaper(ops, str(current), identity)
+    assert current.read_bytes() == b"new file contents"

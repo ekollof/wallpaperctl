@@ -19,6 +19,8 @@ Panel {
   readonly property bool animated: setting("animated", false) === true
   readonly property bool remote: setting("remote", false) === true
   property int selectedControl: 0
+  property string deletePath: ""
+  property string deleteIdentity: ""
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
@@ -36,14 +38,26 @@ Panel {
     if (api && api.updateEntryInline(moduleName, entry)) root.settings = entry
   }
   function activateControl() {
-    if (selectedControl === 4) { close(); return }
+    if (selectedControl === 5) { close(); return }
     if (!backend || busy) return
     if (selectedControl === 0) backend.randomize(animated, remote)
     else if (selectedControl === 1) { root.close(); picker.open() }
     else if (selectedControl === 2) setPreference("animated", !animated)
     else if (selectedControl === 3) setPreference("remote", !remote)
+    else if (selectedControl === 4) requestDelete()
   }
-  onOpenedChanged: if (opened && backend) backend.refresh()
+  function requestDelete() {
+    if (!backend || busy || !info.path || !info.identity || info.missing) return
+    deletePath = info.path
+    deleteIdentity = info.identity
+    confirmation.selectedIndex = 0
+    confirmation.opened = true
+    confirmation.forceActiveFocus()
+  }
+  onOpenedChanged: {
+    if (opened && backend) backend.refresh()
+    if (!opened) confirmation.opened = false
+  }
 
   WidgetButton {
     id: button
@@ -76,9 +90,10 @@ Panel {
     PanelKeyCatcher {
       id: keys
       anchors.fill: parent
+      blocked: confirmation.opened
       onCloseRequested: root.close()
-      onMoveRequested: function(dx, dy) { root.selectedControl = (root.selectedControl + (dy || dx) + 5) % 5 }
-      onTabRequested: function(direction) { root.selectedControl = (root.selectedControl + direction + 5) % 5 }
+      onMoveRequested: function(dx, dy) { root.selectedControl = (root.selectedControl + (dy || dx) + 6) % 6 }
+      onTabRequested: function(direction) { root.selectedControl = (root.selectedControl + direction + 6) % 6 }
       onActivateRequested: root.activateControl()
       Flickable {
         anchors.fill: parent
@@ -181,10 +196,33 @@ Panel {
           }
           Button {
             width: parent.width
-            text: "Close"
+            text: "Delete current wallpaper…"
+            iconText: "󰆴"
+            foreground: Commons.Color.urgent
+            enabled: !!root.backend && !root.busy && !!root.info.identity && !root.info.missing
             hasCursor: root.selectedControl === 4
+            onClicked: root.requestDelete()
+          }
+          Button {
+            width: parent.width
+            text: "Close"
+            hasCursor: root.selectedControl === 5
             onClicked: root.close()
           }
+        }
+      }
+      ConfirmDialog {
+        id: confirmation
+        anchors.fill: parent
+        message: "Permanently delete this wallpaper?\n\n" + root.deletePath
+          + "\n\nA local replacement will be applied first. If none can be applied, the file is kept."
+        confirmText: "Delete"
+        Keys.onPressed: function(event) { event.accepted = handleKey(event) }
+        onCanceled: { opened = false; keys.forceActiveFocus() }
+        onConfirmed: {
+          opened = false
+          keys.forceActiveFocus()
+          if (root.backend) root.backend.deleteCurrent(root.deletePath, root.deleteIdentity)
         }
       }
     }

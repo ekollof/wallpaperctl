@@ -242,7 +242,11 @@ wallpaperctl setup omarchy    # installs prerequisites, creates + activates the 
 
 Setup also installs a **wallpaper bar icon**. Left or right click it for a
 preview and file information, **Randomize**, and **Choose wallpaper…** (a file
-selection dialog). The **Animated** and **Fetch remotely** toggles select the
+selection dialog). The
+**Delete current wallpaper…** button asks for confirmation, applies a local
+replacement, then permanently removes the confirmed file. If no replacement
+can be applied, the original file is kept. The **Animated** and **Fetch remotely**
+toggles select the
 type and source for the next random wallpaper; defaults are static and local.
 Preferences persist in Omarchy's widget settings across restarts. Choosing a
 file applies that file directly. Remote fetching uses your existing provider
