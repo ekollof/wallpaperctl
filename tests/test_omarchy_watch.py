@@ -1,17 +1,58 @@
 from __future__ import annotations
 
 import json
+import socket
+import threading
 from unittest.mock import patch
 
 from wallpaperctl.omarchy_watch import (
     is_layout_event,
     monitor_layout_fingerprint,
     rebind_motion_wallpaper,
+    restore_dynamic_theme,
     restore_monitor_transforms,
     snapshot_monitor_transforms,
     startup_rebind,
     suppress_layout_rebind,
+    watch_loop,
 )
+
+
+def test_config_reload_restores_dynamic_palette(monkeypatch, tmp_path):
+    from wallpaperctl import omarchy_watch as watch
+
+    monkeypatch.setattr(watch, "_PID_FILE", tmp_path / "watch.pid")
+    monkeypatch.setattr(watch, "monitor_layout_fingerprint", lambda: "unchanged")
+    monkeypatch.setattr(watch, "is_dynamic_theme_active", lambda: True)
+    monkeypatch.setattr(watch, "_DEBOUNCE_S", 0)
+    path = tmp_path / "events.sock"
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
+        server.bind(str(path))
+        server.listen(1)
+
+        def send_reload():
+            conn, _ = server.accept()
+            with conn:
+                conn.sendall(b"configreloaded>>\n")
+
+        thread = threading.Thread(target=send_reload)
+        thread.start()
+        with (
+            patch("wallpaperctl.theme.omarchy.apply_hypr_borders_from_colors_file") as apply,
+            patch.object(watch, "rebind_motion_wallpaper"),
+        ):
+            assert watch_loop(once_socket=path, startup=False) == 0
+            apply.assert_called_once_with()
+        thread.join()
+
+
+def test_palette_restore_respects_theme_switch():
+    with (
+        patch("wallpaperctl.omarchy_watch.is_dynamic_theme_active", return_value=False),
+        patch("wallpaperctl.theme.omarchy.apply_hypr_borders_from_colors_file") as apply,
+    ):
+        restore_dynamic_theme()
+        apply.assert_not_called()
 
 
 def test_fingerprint_changes_on_transform():

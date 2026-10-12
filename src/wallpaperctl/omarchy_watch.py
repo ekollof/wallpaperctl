@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 
 from wallpaperctl.omarchy import (
+    is_dynamic_theme_active,
     motion_state_file,
     motion_wallpaper_play,
     motion_wallpaper_stop,
@@ -345,23 +346,31 @@ def _write_own_pid() -> None:
     _PID_FILE.write_text(f"{os.getpid()}\n", encoding="utf-8")
 
 
+def restore_dynamic_theme() -> None:
+    """Restore runtime colors after a config reload resets Omarchy defaults."""
+    if not is_dynamic_theme_active():
+        return
+    try:
+        from wallpaperctl.theme.omarchy import apply_hypr_borders_from_colors_file
+
+        apply_hypr_borders_from_colors_file()
+    except Exception as e:  # noqa: BLE001 — watcher must not die
+        log.debug("omarchy-watch palette restore failed: %s", e)
+
+
 def watch_loop(
     *, once_socket: Path | None = None, startup: bool = True
 ) -> int:
     """Block, reading Hyprland events until the socket goes away (then retry)."""
     _write_own_pid()
     if startup and once_socket is None:
-        try:
-            from wallpaperctl.theme.omarchy import apply_hypr_borders_from_colors_file
-
-            apply_hypr_borders_from_colors_file()
-        except Exception as e:  # noqa: BLE001 — watcher must not die
-            log.debug("omarchy-watch startup border apply crashed: %s", e)
+        restore_dynamic_theme()
         try:
             startup_rebind()
         except Exception as e:  # noqa: BLE001 — watcher must not die
             log.debug("omarchy-watch startup rebind crashed: %s", e)
     pending_until = 0.0
+    palette_pending = False
     last_fp = monitor_layout_fingerprint()
     while True:
         sock_path = once_socket or hyprland_socket2_path()
@@ -393,6 +402,9 @@ def watch_loop(
                         pending_until = time.monotonic() + _DEBOUNCE_S
                     if pending_until and time.monotonic() >= pending_until:
                         pending_until = 0.0
+                        if palette_pending:
+                            palette_pending = False
+                            restore_dynamic_theme()
                         try:
                             rebind_motion_wallpaper()
                         except Exception as e:  # noqa: BLE001 — watcher must not die
@@ -403,6 +415,8 @@ def watch_loop(
                     if line == "":
                         break
                     if is_layout_event(line):
+                        if line.split(">>", 1)[0].strip() == "configreloaded":
+                            palette_pending = True
                         pending_until = time.monotonic() + _DEBOUNCE_S
         finally:
             try:
