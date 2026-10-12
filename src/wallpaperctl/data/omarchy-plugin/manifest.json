@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.ekollof.wallpaperctl",
+  "name": "Wallpaperctl",
+  "version": "0.1.0",
+  "author": "Emiel Kollof",
+  "license": "MIT",
+  "description": "Wallpaper information and controls for wallpaperctl",
+  "kinds": [
+    "bar-widget",
+    "service"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml",
+    "service": "Service.qml"
+  },
+  "barWidget": {
+    "displayName": "Wallpaperctl",
+    "description": "Wallpaper information and controls for wallpaperctl",
+    "category": "Desktop",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "animated": false,
+      "remote": false
+    },
+    "schema": [
+      {
+        "key": "animated",
+        "type": "boolean",
+        "label": "Pick animated wallpapers",
+        "defaultValue": false
+      },
+      {
+        "key": "remote",
+        "type": "boolean",
+        "label": "Fetch wallpapers remotely",
+        "defaultValue": false
+      }
+    ]
+  }
+}

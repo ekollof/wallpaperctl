@@ -16,6 +16,7 @@ from wallpaperctl.omarchy import (
     run_omarchy,
     user_theme_dir,
 )
+from wallpaperctl.omarchy_panel import PLUGIN_ID
 from wallpaperctl.setup.bootstrap import bootstrap_config
 from wallpaperctl.setup.deps import DEPS, Dep, Kind
 from wallpaperctl.setup.packages import (
@@ -28,6 +29,37 @@ from wallpaperctl.util import have, home, run
 
 MOTION_PLUGIN_REPO = "https://github.com/28allday/Motion-Wallpaper-Omarchy.git"
 MOTION_PLUGIN_FRAGMENT = "motion-wallpaper"
+
+
+def install_wallpaper_widget() -> bool:
+    """Install bundled UI assets and enable them without moving an existing widget."""
+    source = Path(__file__).resolve().parents[1] / "data" / "omarchy-plugin"
+    target = home() / ".config" / "omarchy" / "plugins" / PLUGIN_ID
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        for name in ("manifest.json", "BarWidget.qml", "Service.qml", "README.md", "LICENSE"):
+            src = source / name
+            dest = target / name
+            if not dest.is_file() or src.read_bytes() != dest.read_bytes():
+                shutil.copy2(src, dest)
+    except OSError as e:
+        print(f"Warning: wallpaper widget install failed: {e}")
+        return False
+    result = run_omarchy(["plugin", "validate", str(target)], timeout=15)
+    if result.returncode != 0:
+        print("Warning: installed Omarchy does not support the wallpaper widget:")
+        print((result.stderr or result.stdout or "validation failed")[:300])
+        return False
+    # Rescan first: a newly copied plugin may not yet be in the live catalog.
+    if have("omarchy-shell") and is_omarchy_shell_running():
+        run(["omarchy-shell", "shell", "rescanPlugins"], timeout=15)
+    result = run_omarchy(["bar", "put", PLUGIN_ID, "--section", "right"], timeout=30)
+    if result.returncode != 0:
+        print(f"Note: wallpaper widget installed at {target}.")
+        print(f"  Enable after shell startup: omarchy bar put {PLUGIN_ID}")
+        return False
+    print("wallpaper widget: enabled (left/right click for information and controls)")
+    return True
 
 # The motion-wallpaper shell plugin renders video through QML MediaPlayer
 # (QtMultimedia). Without that module the plugin silently fails to load
@@ -432,6 +464,9 @@ def bootstrap_omarchy(*, yes: bool = False, force: bool = False) -> int:
 
     print()
     _install_omarchy_hooks()
+
+    print()
+    install_wallpaper_widget()
 
     print()
     rc = bootstrap_wallust(force=force, yes=yes, skip_opencode=True)

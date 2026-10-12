@@ -54,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
         "migrate",
         "manage",
         "omarchy-watch",
+        "omarchy-panel",
         "version",
         "help",
     }
@@ -312,6 +313,11 @@ def _subcommand_main(argv: list[str]) -> int:
 
     p_set = sub.add_parser("set", help="Set a specific wallpaper")
     p_set.add_argument("path")
+    p_panel = sub.add_parser("omarchy-panel", help="Omarchy wallpaper widget interface")
+    panel_sub = p_panel.add_subparsers(dest="panel_action", required=True)
+    panel_sub.add_parser("status", help="Print wallpaper information as JSON")
+    panel_set = panel_sub.add_parser("set", help="Apply a local file URL from the picker")
+    panel_set.add_argument("url")
     p_set.add_argument(
         "--sync",
         action="store_true",
@@ -567,6 +573,21 @@ def _subcommand_main(argv: list[str]) -> int:
     debug = bool(os.environ.get("DEBUG"))
     ensure_debug_logging(debug)
     ops = load_ops_config()
+
+    if args.cmd == "omarchy-panel":
+        import json
+
+        from wallpaperctl.omarchy_panel import local_file_url, wallpaper_status
+
+        if args.panel_action == "status":
+            print(json.dumps(wallpaper_status(ops)))
+            return 0
+        try:
+            path = local_file_url(args.url)
+        except ValueError as e:
+            print(str(e), file=sys.stderr)
+            return 1
+        return main(["set", str(path), "--sync"])
 
     if args.cmd == "version":
         print(f"wallpaperctl {__version__}")

@@ -240,6 +240,16 @@ wallpaperctl drives it through omarchy tooling:
 wallpaperctl setup omarchy    # installs prerequisites, creates + activates the theme
 ```
 
+Setup also installs a **wallpaper bar icon**. Left or right click it for a
+preview and file information, **Randomize**, and **Choose wallpaper…** (a file
+selection dialog). The **Animated** and **Fetch remotely** toggles select the
+type and source for the next random wallpaper; defaults are static and local.
+Preferences persist in Omarchy's widget settings across restarts. Choosing a
+file applies that file directly. Remote fetching uses your existing provider
+configuration and falls back locally on failure. Status checks stay local.
+Re-running setup updates the bundled widget while preserving its settings and
+bar position. Requires the built-in Quattro bar and QtQuick.Dialogs.
+
 This creates **one** persistent user theme, *Dynamic Wallpapers*
 (`~/.config/omarchy/themes/dynamic-wallpapers/`), and activates it. It also
 makes sure the omarchy-shell **Motion Wallpaper** plugin (third-party,
