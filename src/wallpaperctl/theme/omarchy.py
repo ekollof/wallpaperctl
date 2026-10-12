@@ -445,7 +445,7 @@ def _hl_border(spec: str) -> str | dict:
 
 
 def _hl_config_expr(mapping: dict[str, str]) -> str | None:
-    """``hl.config({...})`` applying omarchy's border keys, or None.
+    """``hl.config({...})`` applying borders and readable group labels, or None.
 
     Same keys omarchy's generated hyprland.lua writes: general.col and
     group.col border colors. Applied live via ``hyprctl eval`` (the same
@@ -458,6 +458,24 @@ def _hl_config_expr(mapping: dict[str, str]) -> str | None:
     inactive = (mapping.get("hyprland_inactive_border") or "rgba(595959aa)").strip()
     active_val = _hl_border(active)
     inactive_val = _hl_border(inactive)
+    # Omarchy's translucent bars expose the wallpaper behind the labels.
+    # Opaque palette surfaces and black/white text keep contrast predictable.
+    bar_active = mapping.get("accent") or "#888888"
+    bar_inactive = mapping.get("background") or "#101010"
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", bar_active):
+        bar_active = "#888888"
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", bar_inactive):
+        bar_inactive = "#101010"
+
+    def label_color(surface: str) -> str:
+        channels = [c / 255 for c in hex_to_rgb(surface)]
+        linear = [
+            c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+            for c in channels
+        ]
+        luminance = sum(c * w for c, w in zip(linear, (0.2126, 0.7152, 0.0722)))
+        return BLACK if luminance > 0.179 else WHITE
+
     table = _lua_value(
         {
             "general": {
@@ -470,6 +488,19 @@ def _hl_config_expr(mapping: dict[str, str]) -> str | None:
                 "col": {
                     "border_active": active_val,
                     "border_inactive": inactive_val,
+                },
+                "groupbar": {
+                    "gradients": True,
+                    "col": {
+                        "active": bar_active,
+                        "inactive": bar_inactive,
+                        "locked_active": bar_active,
+                        "locked_inactive": bar_inactive,
+                    },
+                    "text_color": label_color(bar_active),
+                    "text_color_inactive": label_color(bar_inactive),
+                    "text_color_locked_active": label_color(bar_active),
+                    "text_color_locked_inactive": label_color(bar_inactive),
                 },
             },
         }

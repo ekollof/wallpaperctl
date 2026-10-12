@@ -893,6 +893,26 @@ def test_hl_config_expr_from_mapping():
         assert key in expr, expr
 
 
+@pytest.mark.parametrize(
+    "surface, text",
+    [("#ffffff", "#000000"), ("#000000", "#FFFFFF"),
+     ("#a66e3f", "#000000"), ("#10161a", "#FFFFFF")],
+)
+def test_group_labels_use_opaque_surfaces_and_contrasting_text(surface, text):
+    expr = tom._hl_config_expr({
+        "hyprland_active_border": "rgb(123456)",
+        "accent": surface,
+        "background": surface,
+    })
+    assert expr is not None
+    for key in ("active", "inactive", "locked_active", "locked_inactive"):
+        assert f'{key} = "{surface}"' in expr
+    for key in ("text_color", "text_color_inactive", "text_color_locked_active",
+                "text_color_locked_inactive"):
+        assert f'{key} = "{text}"' in expr
+    assert "gradients = true" in expr
+
+
 def test_hl_border_single_color_stays_plain_string():
     # omarchy's hypr_gradient_value: one color → quoted string, angle dropped
     assert tom._hl_border("rgba(595959aa)") == "rgba(595959aa)"
