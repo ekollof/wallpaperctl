@@ -108,3 +108,29 @@ def test_opacity_one_strips_block(tmp_path: Path):
 
 def test_missing_file_is_noop(tmp_path: Path):
     assert apply_terminal_background_opacity(0.5, files=[tmp_path / "nope.conf"]) == []
+
+
+def test_unset_removes_owned_settings_preserves_native_opacity(tmp_path: Path):
+    for name, native in (
+        ("kitty.conf", "background_opacity 0.65\n"),
+        ("ghostty.conf", "background-opacity = 0.65\n"),
+        ("foot.ini", "[colors-dark]\nalpha=0.65\n"),
+        ("alacritty.toml", "[window]\nopacity = 0.65\n"),
+    ):
+        path = tmp_path / name
+        original = "# omarchy-glass begin\n" + native + "# omarchy-glass end\n"
+        path.write_text(
+            original + f"{BEGIN}\nbackground_opacity 0.85\n{END}\n"
+            + "alpha=0.85  # wallpaperctl-background-opacity\n"
+            + "opacity = 0.85  # wallpaperctl-background-opacity\n"
+            + "transparent_background_colors = false  # wallpaperctl-background-opacity\n"
+        )
+        assert apply_terminal_background_opacity(None, files=[path]) == [path]
+        assert path.read_text() == original
+        assert apply_terminal_background_opacity(None, files=[path]) == []
+
+
+def test_default_opacity_is_unmanaged():
+    from wallpaperctl.config import OpsConfig
+
+    assert OpsConfig().terminal_background_opacity is None

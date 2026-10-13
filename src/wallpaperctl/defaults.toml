@@ -54,8 +54,8 @@ omarchy_lock_background_alpha = 0.8
 omarchy_lock_border_alpha = 1.0
 omarchy_lock_selection_alpha = 0.45
 omarchy_lock_placeholder_mix = 34
-# Terminal background opacity (text stays opaque). 1.0 = no wallpaper bleed.
-# Kitty, Ghostty, Foot, Alacritty. Not Hyprland window opacity.
+# Optional override; unset leaves terminal opacity to Omarchy/user settings.
+# Explicit values override Omarchy transparency modes.
 # terminal_background_opacity = 0.85
 gtk_theme_plasma = "Breeze"
 gtk_theme_xfce = "FlatColor-dark"

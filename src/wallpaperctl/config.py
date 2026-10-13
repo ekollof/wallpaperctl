@@ -136,9 +136,8 @@ class OpsConfig:
     wallust_fix_contrast: bool = True
     wallust_text_contrast: float = 4.5
     wallust_accent_contrast: float = 3.0
-    # Terminal *background* opacity (0.20–1.0). Text stays opaque. 1.0 = solid
-    # bg (no wallpaper bleed). Not Hyprland window opacity (that fades glyphs).
-    terminal_background_opacity: float = 0.85
+    # Opt-in terminal background opacity; None leaves Omarchy/user in control.
+    terminal_background_opacity: float | None = None
     gtk_theme_plasma: str = "Breeze"
     gtk_theme_xfce: str = "FlatColor-dark"
     gtk_theme_cinnamon: str = "Mint-Y"

@@ -280,12 +280,11 @@ dunst-or-mako ops are skipped on Omarchy so they cannot fight
 `omarchy-theme-set-gnome` or the shell notifier. Unchanged palettes skip
 the app retint entirely.
 
-Terminals get **background-only** opacity so wallpaper shows through empty
-cells while text stays opaque: Kitty `background_opacity`, Ghostty
-`background-opacity`, Foot `alpha` (in `[colors-dark]`), Alacritty
-`window.opacity` with `transparent_background_colors = false`. This is not
-Hyprland window opacity (that fades glyphs). Override with
-`terminal_background_opacity` in ops.toml (`1.0` = solid).
+Terminal opacity is managed by Omarchy's transparency controls by default.
+Wallpaperctl removes its older marked opacity overrides on the next run.
+To force background-only opacity explicitly, set `terminal_background_opacity`
+in ops.toml (for example `0.85`). This overrides Omarchy's transparency modes;
+omit the setting to let Omarchy control opacity.
 
 Switch to any other Omarchy theme and wallpaperctl only swaps backgrounds
 (no color changes); switching back resumes full dynamic behavior. No new

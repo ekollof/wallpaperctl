@@ -595,13 +595,12 @@ def retint_without_compositor_reload(
         return False
     if mapping:
         _apply_hypr_borders(mapping)
-    if background_opacity is not None:
-        from wallpaperctl.theme.terminal_opacity import (
-            apply_terminal_background_opacity,
-            reload_terminals_for_opacity,
-        )
+    from wallpaperctl.theme.terminal_opacity import (
+        apply_terminal_background_opacity,
+        reload_terminals_for_opacity,
+    )
 
-        apply_terminal_background_opacity(background_opacity)
+    if apply_terminal_background_opacity(background_opacity):
         reload_terminals_for_opacity()
     for cmd in _RETINT_COMMANDS:
         if have(cmd):
@@ -1041,7 +1040,7 @@ class OmarchyThemeOp:
                 reload_terminals_for_opacity,
             )
 
-            opacity = getattr(ctx.ops, "terminal_background_opacity", 0.85)
+            opacity = getattr(ctx.ops, "terminal_background_opacity", None)
             if apply_terminal_background_opacity(opacity):
                 reload_terminals_for_opacity()
                 if have("omarchy-restart-terminal"):
@@ -1063,7 +1062,7 @@ class OmarchyThemeOp:
                 slug,
                 mapping,
                 background_opacity=getattr(
-                    ctx.ops, "terminal_background_opacity", 0.85
+                    ctx.ops, "terminal_background_opacity", None
                 ),
             ):
                 debug_op(self.name, "kitty/hypr retinted from wallust palette", ctx)

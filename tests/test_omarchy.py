@@ -518,7 +518,7 @@ def test_op_run_skips_compositor_reload_when_templates_work(monkeypatch, tmp_pat
     kitty = (
         tmp_path / ".local" / "state" / "omarchy" / "current" / "theme" / "kitty.conf"
     )
-    assert "background_opacity 0.85" in kitty.read_text(encoding="utf-8")
+    assert "background_opacity" not in kitty.read_text(encoding="utf-8")
     assert ["omarchy-theme-set-gnome"] in runs
     assert ["omarchy-theme-set-foot"] in runs
 

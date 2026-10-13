@@ -75,7 +75,7 @@ class WallustOp:
         )
 
         patched = apply_terminal_background_opacity(
-            getattr(ctx.ops, "terminal_background_opacity", 0.85)
+            getattr(ctx.ops, "terminal_background_opacity", None)
         )
         if patched:
             reload_terminals_for_opacity()
@@ -83,7 +83,7 @@ class WallustOp:
             debug_op(
                 self.name,
                 "terminal background opacity "
-                f"{getattr(ctx.ops, 'terminal_background_opacity', 0.85)} "
+                f"{getattr(ctx.ops, 'terminal_background_opacity', None)} "
                 f"on {', '.join(p.name for p in patched)}",
                 ctx,
             )

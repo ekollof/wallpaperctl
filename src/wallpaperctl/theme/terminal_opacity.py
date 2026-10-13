@@ -17,7 +17,7 @@ import logging
 import re
 from pathlib import Path
 
-from wallpaperctl.util import home, pgrep_exact, run
+from wallpaperctl.util import have, home, pgrep_exact, run
 
 log = logging.getLogger("wallpaperctl")
 
@@ -49,14 +49,14 @@ def default_terminal_theme_files() -> list[Path]:
 
 
 def apply_terminal_background_opacity(
-    opacity: float,
+    opacity: float | None,
     *,
     files: list[Path] | None = None,
     reload: bool = False,
 ) -> list[Path]:
     """Upsert or strip opacity. Returns changed paths."""
-    opacity = clamp_opacity(opacity)
-    solid = opacity >= 0.995
+    opacity = None if opacity is None else clamp_opacity(opacity)
+    solid = opacity is not None and opacity >= 0.995
     changed: list[Path] = []
     for path in files if files is not None else default_terminal_theme_files():
         if not path.is_file():
@@ -69,7 +69,15 @@ def apply_terminal_background_opacity(
         except OSError as e:
             log.debug("terminal opacity: cannot read %s: %s", path, e)
             continue
-        if kind == "foot":
+        if opacity is None:
+            # Release only settings owned by wallpaperctl, preserving user and
+            # Omarchy glass blocks (including their native opacity values).
+            updated = _BLOCK_RE.sub("", original)
+            updated = "".join(
+                line for line in updated.splitlines(keepends=True)
+                if "# wallpaperctl-background-opacity" not in line
+            )
+        elif kind == "foot":
             updated = _apply_foot(original, None if solid else opacity)
         elif kind == "alacritty":
             updated = _apply_alacritty(original, None if solid else opacity)
@@ -85,6 +93,9 @@ def apply_terminal_background_opacity(
             continue
         changed.append(path)
         log.debug("terminal opacity: %s -> %s", path.name, opacity)
+    if changed and opacity is None and files is None and have("omarchy-theme-set-glass"):
+        # Restore the saved mode after migrating old wallpaperctl overrides.
+        run(["omarchy-theme-set-glass"], timeout=20)
     if reload:
         reload_terminals_for_opacity()
     return changed
