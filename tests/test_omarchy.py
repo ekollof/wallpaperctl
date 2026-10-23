@@ -1939,21 +1939,27 @@ def test_starship_hook_renders_theme_palette(monkeypatch, tmp_path):
         'foreground = "#f8f8f2"\n',
         encoding="utf-8",
     )
-    tpl = tmp_path / ".config/wallust/templates/starship.toml"
+    tpl = tmp_path / "omarchy/config/starship.toml"
     tpl.parent.mkdir(parents=True)
-    tpl.write_text(
-        'format = "$all"\n'
-        "[username]\n"
-        'style_user = "bg:{{ color0 }}"\n'
-        'style_root = "bg:{{ color1 }} fg:{{ color2 }}"\n'
-        'style = "bg:{{ color4 }} bg:{{ color5 }} bg:{{ color8 }}"\n',
-        encoding="utf-8",
+    original = (
+        'add_newline = true\n'
+        'format = "[$directory$git_branch$git_status]($style)$character"\n'
+        '[character]\n'
+        'success_symbol = "[❯](bold cyan)"\n'
+        '[git_branch]\n'
+        'style = "italic cyan"\n'
     )
+    tpl.write_text(original, encoding="utf-8")
+    # A leftover generic powerline template must be ignored.
+    generic = tmp_path / ".config/wallust/templates/starship.toml"
+    generic.parent.mkdir(parents=True)
+    generic.write_text('format = " powerline"\n', encoding="utf-8")
 
     # fake omarchy-theme-color implementing the alias cascade end
     resolver = tmp_path / "bin" / "omarchy-theme-color"
     resolver.parent.mkdir(parents=True)
     mapping = {
+        "cyan": "#89dceb",
         "color0": "#1e1e2e",  # ← background
         "color1": "#ff5555",  # ← red
         "color2": "#50fa7b",  # ← green
@@ -1970,16 +1976,14 @@ def test_starship_hook_renders_theme_palette(monkeypatch, tmp_path):
     )
     resolver.chmod(0o755)
 
-    env = dict(os.environ, HOME=str(tmp_path))
+    env = dict(os.environ, HOME=str(tmp_path), OMARCHY_PATH=str(tmp_path / "omarchy"))
     env["PATH"] = f"{resolver.parent}{os.pathsep}{env.get('PATH', '')}"
     result = subprocess.run(["bash", str(hook)], env=env, capture_output=True)
     assert result.returncode == 0, result.stderr
 
     rendered = (tmp_path / ".config/starship.toml").read_text(encoding="utf-8")
-    assert "{{" not in rendered
-    assert 'style_user = "bg:#1e1e2e"' in rendered
-    assert 'style_root = "bg:#ff5555 fg:#50fa7b"' in rendered
-    assert "#bd93f9" in rendered and "#ff79c6" in rendered and "#6c7086" in rendered
+    assert rendered == original.replace("cyan", "#89dceb")
+    assert "" not in rendered
 
 
 def _motion_hook() -> Path:
@@ -2079,10 +2083,11 @@ def test_starship_hook_keeps_file_on_unresolvable_theme(monkeypatch, tmp_path):
         / "theme-set.d"
         / "wallpaperctl-starship"
     )
-    tpl = tmp_path / ".config/wallust/templates/starship.toml"
+    tpl = tmp_path / "omarchy/config/starship.toml"
     tpl.parent.mkdir(parents=True)
     tpl.write_text("x = {{ color1 }}\n", encoding="utf-8")
     existing = tmp_path / ".config/starship.toml"
+    existing.parent.mkdir(parents=True, exist_ok=True)
     existing.write_text("previous = 1\n", encoding="utf-8")
 
     # resolver present but resolves nothing (broken theme)
@@ -2091,7 +2096,7 @@ def test_starship_hook_keeps_file_on_unresolvable_theme(monkeypatch, tmp_path):
     resolver.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
     resolver.chmod(0o755)
 
-    env = dict(os.environ, HOME=str(tmp_path))
+    env = dict(os.environ, HOME=str(tmp_path), OMARCHY_PATH=str(tmp_path / "omarchy"))
     env["PATH"] = f"{resolver.parent}{os.pathsep}{env.get('PATH', '')}"
     result = subprocess.run(["bash", str(hook)], env=env, capture_output=True)
     assert result.returncode == 1
