@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -29,6 +30,126 @@ from wallpaperctl.util import have, home, run
 
 MOTION_PLUGIN_REPO = "https://github.com/28allday/Motion-Wallpaper-Omarchy.git"
 MOTION_PLUGIN_FRAGMENT = "motion-wallpaper"
+
+# OmaRGB is Omarchy-only. It is not a distro package; setup clones this
+# repo (or reuses a checkout the installer already linked) and runs install.sh.
+OMARGB_REPO = "https://github.com/ekollof/OmaRGB.git"
+
+
+def _omargb_present() -> bool:
+    """True when this user already has the ``omargb`` command.
+
+    Uses the same ``have`` helper as the rest of setup so tests can stub it,
+    and also accepts the installer's ``~/.local/bin`` link when that directory
+    is not on PATH yet.
+    """
+    if have("omargb"):
+        return True
+    return (home() / ".local" / "bin" / "omargb").exists()
+
+
+def omargb_managed_checkout() -> Path:
+    """Clone location when no OmaRGB checkout is linked yet."""
+    return home() / ".local" / "share" / "wallpaperctl" / "OmaRGB"
+
+
+def _valid_omargb_checkout(path: Path) -> bool:
+    return (path / "install.sh").is_file() and (path / "bin" / "omargb").is_file()
+
+
+def find_omargb_checkout() -> Path | None:
+    """Checkout whose install.sh should run, if one already exists.
+
+    Order: ``OMARGB_CHECKOUT``, the tree the installer linked at
+    ``~/.local/share/omargb/src``, the tree behind ``omargb`` on PATH, then
+    the managed clone. An invalid ``OMARGB_CHECKOUT`` is not replaced by a
+    different tree.
+    """
+    env = os.environ.get("OMARGB_CHECKOUT", "").strip()
+    if env:
+        path = Path(env).expanduser()
+        return path if _valid_omargb_checkout(path) else None
+
+    linked = home() / ".local" / "share" / "omargb" / "src"
+    if linked.exists() and _valid_omargb_checkout(linked):
+        return linked.resolve()
+
+    exe = shutil.which("omargb")
+    if exe:
+        root = Path(exe).resolve().parent.parent
+        if _valid_omargb_checkout(root):
+            return root
+
+    managed = omargb_managed_checkout()
+    if _valid_omargb_checkout(managed):
+        return managed.resolve()
+    return None
+
+
+def ensure_omargb(*, yes: bool = False) -> bool:
+    """Make sure OmaRGB is installed by running its installer.
+
+    Returns True when ``omargb`` is present afterwards. Already-installed
+    setups are left untouched so a later ``setup omarchy`` does not
+    fast-forward a checkout the user is editing.
+    """
+    if _omargb_present():
+        return True
+
+    env = os.environ.get("OMARGB_CHECKOUT", "").strip()
+    checkout = find_omargb_checkout()
+    if env and checkout is None:
+        print(f"Error: OMARGB_CHECKOUT is not an OmaRGB tree: {env}")
+        print("  Expected install.sh and bin/omargb in that directory.")
+        return False
+
+    if checkout is None:
+        if not have("git"):
+            print("Error: git is required to clone OmaRGB.")
+            print(f"  Install git, then re-run, or clone {OMARGB_REPO}")
+            print("  and run its install.sh (or set OMARGB_CHECKOUT).")
+            return False
+        checkout = omargb_managed_checkout()
+        if checkout.exists():
+            print(f"Error: {checkout} exists but is not an OmaRGB checkout.")
+            print("  Remove it or set OMARGB_CHECKOUT to a tree with install.sh.")
+            return False
+        checkout.parent.mkdir(parents=True, exist_ok=True)
+        print(f"Cloning OmaRGB into {checkout}")
+        cloned = run(
+            ["git", "clone", OMARGB_REPO, str(checkout)],
+            timeout=300,
+            capture=False,
+        )
+        if cloned.returncode != 0 or not _valid_omargb_checkout(checkout):
+            print("Error: git clone of OmaRGB failed.")
+            print(f"  Manual: git clone {OMARGB_REPO}")
+            print("          ./install.sh")
+            return False
+
+    print("OmaRGB is required on Omarchy. Running its installer:")
+    print(f"  {checkout / 'install.sh'}")
+    if not yes:
+        try:
+            ans = input("Proceed? [y/N] ").strip().lower()
+        except EOFError:
+            ans = "n"
+        if ans not in ("y", "yes"):
+            print("Cancelled.")
+            return False
+
+    installed = run(
+        ["bash", str(checkout / "install.sh")],
+        cwd=checkout,
+        timeout=180,
+        capture=False,
+    )
+    if installed.returncode != 0 or not _omargb_present():
+        print("Error: OmaRGB's installer did not leave omargb in place.")
+        print(f"  Manual: bash {checkout / 'install.sh'}")
+        return False
+    print("✓ OmaRGB installed (hardware theming).")
+    return True
 
 
 def install_wallpaper_widget() -> bool:
@@ -457,6 +578,15 @@ def bootstrap_omarchy(*, yes: bool = False, force: bool = False) -> int:
         print("wallust is required to palettize wallpapers for the theme.")
         if not _install_wallust(yes=yes):
             print("Error: wallust is still missing; aborting (install it and re-run).")
+            return 1
+
+    print()
+    if _omargb_present():
+        print("OmaRGB:     installed")
+    else:
+        print("OmaRGB is required on Omarchy (hardware theming engines).")
+        if not ensure_omargb(yes=yes):
+            print("Error: OmaRGB is still missing; aborting (install it and re-run).")
             return 1
 
     print()

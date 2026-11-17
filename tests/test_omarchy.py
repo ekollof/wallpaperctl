@@ -1335,6 +1335,96 @@ def test_setup_creates_theme_once(monkeypatch, tmp_path, capsys):
         assert ["theme", "switcher", "--preload"] not in second
 
 
+def test_setup_fails_when_omargb_missing(monkeypatch, tmp_path, capsys):
+    _fake_home(monkeypatch, tmp_path)
+    with (
+        patch("wallpaperctl.setup.omarchy_bootstrap.omarchy_available", return_value=True),
+        patch(
+            "wallpaperctl.setup.omarchy_bootstrap.have",
+            side_effect=lambda cmd: cmd == "wallust",
+        ),
+        patch("wallpaperctl.setup.omarchy_bootstrap.ensure_omargb", return_value=False),
+    ):
+        assert ob.bootstrap_omarchy(yes=True) == 1
+    assert "OmaRGB is still missing" in capsys.readouterr().out
+
+
+def test_ensure_omargb_clones_and_runs_installer(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    monkeypatch.delenv("OMARGB_CHECKOUT", raising=False)
+    monkeypatch.setattr(ob.shutil, "which", lambda _cmd: None)
+    calls: list[list[str]] = []
+
+    def fake_have(cmd: str) -> bool:
+        return cmd == "git"
+
+    def fake_run(args, **kwargs):
+        calls.append(list(args))
+        if args[0] == "git":
+            dest = Path(args[-1])
+            (dest / "bin").mkdir(parents=True)
+            (dest / "install.sh").write_text("#!/bin/bash\n", encoding="utf-8")
+            (dest / "bin" / "omargb").write_text("#!/bin/bash\n", encoding="utf-8")
+        elif args[0] == "bash":
+            link = tmp_path / ".local" / "bin" / "omargb"
+            link.parent.mkdir(parents=True, exist_ok=True)
+            link.write_text("", encoding="utf-8")
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(ob, "have", fake_have)
+    monkeypatch.setattr(ob, "run", fake_run)
+    assert ob.ensure_omargb(yes=True)
+    assert calls[0][0] == "git" and calls[0][1] == "clone"
+    assert calls[0][2] == ob.OMARGB_REPO
+    assert calls[1][0] == "bash"
+    assert calls[1][1].endswith("install.sh")
+    # Already linked: do not clone or re-run the installer.
+    calls.clear()
+    assert ob.ensure_omargb(yes=True)
+    assert calls == []
+
+
+def test_ensure_omargb_reuses_linked_checkout(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    monkeypatch.delenv("OMARGB_CHECKOUT", raising=False)
+    checkout = tmp_path / "src" / "OmaRGB"
+    (checkout / "bin").mkdir(parents=True)
+    (checkout / "install.sh").write_text("#!/bin/bash\n", encoding="utf-8")
+    (checkout / "bin" / "omargb").write_text("#!/bin/bash\n", encoding="utf-8")
+    linked = tmp_path / ".local" / "share" / "omargb" / "src"
+    linked.parent.mkdir(parents=True)
+    linked.symlink_to(checkout)
+    calls: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        calls.append(list(args))
+        link = tmp_path / ".local" / "bin" / "omargb"
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.write_text("", encoding="utf-8")
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(ob, "have", lambda cmd: False)
+    monkeypatch.setattr(ob, "run", fake_run)
+    assert ob.ensure_omargb(yes=True)
+    assert len(calls) == 1
+    assert calls[0][0] == "bash"
+    assert calls[0][1] == str(checkout / "install.sh")
+
+
+def test_ensure_omargb_cancelled(monkeypatch, tmp_path):
+    _fake_home(monkeypatch, tmp_path)
+    monkeypatch.delenv("OMARGB_CHECKOUT", raising=False)
+    checkout = tmp_path / "src" / "OmaRGB"
+    (checkout / "bin").mkdir(parents=True)
+    (checkout / "install.sh").write_text("#!/bin/bash\n", encoding="utf-8")
+    (checkout / "bin" / "omargb").write_text("#!/bin/bash\n", encoding="utf-8")
+    monkeypatch.setenv("OMARGB_CHECKOUT", str(checkout))
+    monkeypatch.setattr(ob, "have", lambda cmd: False)
+    monkeypatch.setattr(ob, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("ran")))
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "n")
+    assert ob.ensure_omargb(yes=False) is False
+
+
 def test_setup_fails_without_wallust_and_no_pm(monkeypatch, tmp_path, capsys):
     _fake_home(monkeypatch, tmp_path)
     with (

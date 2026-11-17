@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 
 from wallpaperctl.detect.desktop import DesktopEnvironment
 from wallpaperctl.util import have
@@ -52,6 +53,8 @@ class Dep:
             return any(
                 have(c) for c in ("feh", "nitrogen", "hsetroot", "xwallpaper", "xsetbg")
             )
+        if self.check == "omargb":
+            return omargb_installed()
         return have(self.check)
 
     def package_for(self, pm: str) -> str | None:
@@ -340,7 +343,31 @@ DEPS: list[Dep] = [
         for_de=("hyprland", "fallback"),
         notes="Do not run together with xfsettingsd",
     ),
+    # Omarchy hardware theming. Not a distro package: setup runs OmaRGB's
+    # own install.sh (see setup/omarchy_bootstrap.py).
+    Dep(
+        "omargb",
+        "RGB hardware theming (OmaRGB engines)",
+        Kind.DE,
+        "omargb",
+        for_de=("hyprland+omarchy",),
+        notes=(
+            "Required on Omarchy only. Installed by OmaRGB's install.sh "
+            "(https://github.com/ekollof/OmaRGB), not a distro package"
+        ),
+    ),
 ]
+
+
+def omargb_installed() -> bool:
+    """True when the OmaRGB installer has linked ``omargb`` for this user.
+
+    The installer puts the command in ``~/.local/bin``. That directory is not
+    always on PATH while setup is running, so a linked file counts too.
+    """
+    if have("omargb"):
+        return True
+    return (Path.home() / ".local" / "bin" / "omargb").exists()
 
 
 @dataclass

@@ -37,6 +37,21 @@ def test_omarchy_hides_overlay_deps():
     assert by_id["ffmpeg"].relevant
     assert by_id["wallust"].relevant
     assert by_id["hyprctl"].relevant
+    assert by_id["omargb"].relevant
+    assert by_id["omargb"].required
+    assert by_id["omargb"].dep.package_for("pacman") is None
+
+
+def test_omargb_not_required_off_omarchy():
+    for de in (
+        DesktopEnvironment(plasma=True),
+        DesktopEnvironment(hyprland=True),
+        DesktopEnvironment(xfce=True),
+        DesktopEnvironment(),
+    ):
+        by_id = {s.dep.id: s for s in classify_deps(de)}
+        assert not by_id["omargb"].relevant
+        assert not by_id["omargb"].required
 
 
 def test_classify_marks_python():

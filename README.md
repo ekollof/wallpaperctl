@@ -104,7 +104,7 @@ wallpaperctl cleanup             # prune theme backups / stale temps
 wallpaperctl verify              # icons + cinnamon + wallust colors
 wallpaperctl verify icons
 wallpaperctl setup check          # dependency audit for this desktop
-wallpaperctl setup install        # offer to install missing packages
+wallpaperctl setup install        # offer to install missing packages (OmaRGB on Omarchy)
 wallpaperctl setup wallust        # wallust.toml + templates + hooks + OpenCode theme reloader
 wallpaperctl setup wallust-templates  # templates/scripts only (keep your toml)
 wallpaperctl setup wallust --force    # overwrite existing wallust.toml (backs up first)
@@ -237,8 +237,15 @@ Omarchy does not run hyprpaper — the omarchy-shell renders the background, so
 wallpaperctl drives it through omarchy tooling:
 
 ```bash
-wallpaperctl setup omarchy    # installs prerequisites, creates + activates the theme
+wallpaperctl setup omarchy    # prerequisites (including OmaRGB), creates + activates the theme
 ```
+
+OmaRGB is required when the desktop is Omarchy. Setup clones
+[OmaRGB](https://github.com/ekollof/OmaRGB) when nothing
+is linked yet, or reuses the checkout at `~/.local/share/omargb/src` (or
+`OMARGB_CHECKOUT` when that is set), then runs that tree's `install.sh`. The
+installer links `omargb`, the theme and login hooks, and the hardware-engine
+shims. An `omargb` command that is already installed is left as it is.
 
 Setup also installs a **wallpaper bar icon**. Left or right click it for a
 preview and file information, **Randomize**, and **Choose wallpaper…** (a file

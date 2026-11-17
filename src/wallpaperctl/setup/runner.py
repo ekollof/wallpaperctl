@@ -18,6 +18,7 @@ from wallpaperctl.setup.deps import (
 )
 from wallpaperctl.setup.omarchy_bootstrap import (
     bootstrap_omarchy,
+    ensure_omargb,
     leftover_overlay_packages,
     omarchy_status,
 )
@@ -276,36 +277,44 @@ def cmd_install(de, profile: str, *, yes: bool = False, optional: bool = False) 
     rc_py = install_python_extras(yes=yes)
     statuses = classify_deps(de, include_optional=True)
     pm = detect_package_manager()
+    rc = 0
     if not pm:
         print("No supported system package manager detected.")
         print("Install missing tools manually (see: wallpaperctl setup check).")
-        return rc_py
+        if not de.omarchy:
+            return rc_py
+    else:
+        pairs = packages_to_install(
+            statuses,
+            pm,
+            missing_only=True,
+            relevant_only=True,
+            include_optional=optional,
+        )
+        # Always offer wallust if missing
+        if not any(d.id == "wallust" for d, _ in pairs):
+            for s in statuses:
+                if s.dep.id == "wallust" and not s.present:
+                    pkg = s.dep.package_for(pm.id)
+                    if pkg:
+                        pairs.append((s.dep, pkg))
 
-    pairs = packages_to_install(
-        statuses,
-        pm,
-        missing_only=True,
-        relevant_only=True,
-        include_optional=optional,
-    )
-    # Always offer wallust if missing
-    if not any(d.id == "wallust" for d, _ in pairs):
-        for s in statuses:
-            if s.dep.id == "wallust" and not s.present:
-                pkg = s.dep.package_for(pm.id)
-                if pkg:
-                    pairs.append((s.dep, pkg))
-
-    # pacman: if wallust-git fails, point at the AUR helper / cargo paths
-    rc = install_system_packages(pairs, pm, yes=yes)
-    if rc != 0 and any(d.id == "wallust" for d, _ in pairs) and pm.id == "pacman":
-        print("wallust is AUR-only on Arch (no repo package). Try:")
-        print("  paru -S wallust-git      # or yay -S wallust-git")
-        print("  cargo install wallust")
+        # pacman: if wallust-git fails, point at the AUR helper / cargo paths
+        rc = install_system_packages(pairs, pm, yes=yes)
+        if rc != 0 and any(d.id == "wallust" for d, _ in pairs) and pm.id == "pacman":
+            print("wallust is AUR-only on Arch (no repo package). Try:")
+            print("  paru -S wallust-git      # or yay -S wallust-git")
+            print("  cargo install wallust")
     print()
     print("Browser policies (Brave/Chromium theme tint):")
     if de.omarchy:
         print("  Skipped: Omarchy owns them (omarchy-theme-set-browser).")
     else:
         install_browser_policies(yes=yes)
+    if de.omarchy:
+        print()
+        print("OmaRGB (hardware theming, Omarchy only):")
+        if not ensure_omargb(yes=yes):
+            print("Error: OmaRGB is required on Omarchy.")
+            rc = rc or 1
     return rc if rc else rc_py
