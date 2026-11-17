@@ -174,6 +174,38 @@ def test_wallust_op_applies_contrast_fix(tmp_path: Path) -> None:
     fix.assert_called_once()
 
 
+def test_wallust_op_skips_sequences_on_omarchy(tmp_path: Path) -> None:
+    from wallpaperctl.theme.wallust import WallustOp
+
+    ctx = _ctx(tmp_path)
+    ctx.de = DesktopEnvironment(omarchy=True)
+    ctx.ops.wallust_fix_contrast = False
+    ok_result = type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+    with (
+        patch("wallpaperctl.theme.wallust.have", return_value=True),
+        patch("wallpaperctl.theme.wallust.run", return_value=ok_result) as run_mock,
+    ):
+        assert WallustOp().run(ctx)
+    cmd = run_mock.call_args.args[0]
+    assert "--skip-sequences" in cmd
+    assert cmd[cmd.index("--skip-sequences") + 1] == "--backend"
+
+
+def test_wallust_op_sends_sequences_off_omarchy(tmp_path: Path) -> None:
+    from wallpaperctl.theme.wallust import WallustOp
+
+    ctx = _ctx(tmp_path)
+    ctx.ops.wallust_fix_contrast = False
+    ok_result = type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+    with (
+        patch("wallpaperctl.theme.wallust.have", return_value=True),
+        patch("wallpaperctl.theme.wallust.run", return_value=ok_result) as run_mock,
+    ):
+        assert WallustOp().run(ctx)
+    cmd = run_mock.call_args.args[0]
+    assert "--skip-sequences" not in cmd
+
+
 def test_wallust_op_contrast_fix_can_be_disabled(tmp_path: Path) -> None:
     from wallpaperctl.theme.wallust import WallustOp
 

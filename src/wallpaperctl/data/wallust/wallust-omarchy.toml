@@ -32,7 +32,8 @@ pywal = true
 colors = { template = "colors", target = "~/.cache/wal/colors", pywal = true }
 json = { template = "colors.json", target = "~/.cache/wal/colors.json", pywal = true }
 
-# Not omarchy-managed — keep palette-driven:
+# colors.sh is the pywal variable file. Live terminal OSC is not this file:
+# wallpaperctl runs wallust with --skip-sequences and replays omarchy-theme-osc.
 sequence = { template = "colors.sh", target = "~/.cache/wal/colors.sh", new_engine = true }
 css = { template = "colors.css", target = "~/.cache/wal/colors.css", new_engine = true }
 vim = { template = "colors-wal.vim", target = "~/.cache/wal/colors-wal.vim", pywal = true }

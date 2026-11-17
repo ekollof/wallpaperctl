@@ -33,18 +33,21 @@ class WallustOp:
             f"generating scheme backend={backend} palette={palette}",
             ctx,
         )
-        r = run(
-            [
-                "wallust",
-                "run",
-                "--backend",
-                backend,
-                "--palette",
-                palette,
-                str(ctx.image_path),
-            ],
-            timeout=ctx.ops.wallust_timeout,
-        )
+        cmd = [
+            "wallust",
+            "run",
+            "--backend",
+            backend,
+            "--palette",
+            palette,
+            str(ctx.image_path),
+        ]
+        if ctx.de.omarchy:
+            # wallust writes OSC 4/10/11 to the controlling terminal. On
+            # Omarchy a new shell replays `omarchy-theme-osc` instead, and
+            # those are the colors the running window should keep.
+            cmd.insert(2, "--skip-sequences")
+        r = run(cmd, timeout=ctx.ops.wallust_timeout)
         ok = r.returncode == 0
         if not ok:
             out = (r.stdout or "") + (r.stderr or "")

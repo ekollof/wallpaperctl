@@ -274,12 +274,15 @@ configs and flip opencode back to its own theme on every wallpaper change).
 While that theme is active, every wallpaper change:
 
 1. sets the background via `omarchy theme bg set` (or omarchy's motion-wallpaper for videos),
-2. runs wallust on the image,
+2. runs wallust on the image (`--skip-sequences` on Omarchy, so the open
+   terminal is not painted with wallust's OSC palette),
 3. rewrites the theme's `colors.toml` from the palette and live-applies it to
    omarchy-shell (bar/chrome) immediately,
 4. renders app configs with `omarchy-theme-set-templates` (skipping `*.lua` so
    Hyprland does not reload) and runs stock no-reload helpers (terminal, btop,
-   foot, gnome, browser, keyboard, …).
+   foot, gnome, browser, keyboard, …),
+5. replays `omarchy-theme-osc` into open terminal windows, the same sequences
+   a new shell prints.
 
 A full `omarchy theme set` / `theme refresh` is **not** used on wallpaper
 changes — that `hyprctl reload`s and snaps autorotation. GTK / nwg-look /

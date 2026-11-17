@@ -608,6 +608,86 @@ def retint_without_compositor_reload(
     return True
 
 
+# Emulators whose child shells own a pty. Same idea as omarchy-theme-set-foot:
+# write omarchy-theme-osc into each pty so an already-open window matches a
+# new one. Ghostty's config reload does not; shell startup OSC is authoritative.
+_OSC_TERMINALS = ("ghostty", "kitty", "alacritty", "foot", "wezterm", "wezterm-gui")
+
+
+def _child_ptys(pid: str, *, proc_root: Path | None = None) -> list[str]:
+    """Pts of direct children of a terminal process."""
+    root = proc_root or Path("/proc")
+    children = root / pid / "task" / pid / "children"
+    pids: list[str] = []
+    if children.is_file():
+        try:
+            pids = children.read_text(encoding="utf-8", errors="replace").split()
+        except OSError:
+            pids = []
+    if not pids:
+        found = run(["pgrep", "-P", pid], timeout=5)
+        if found.returncode == 0:
+            pids = (found.stdout or "").split()
+    ptys: list[str] = []
+    for child in pids:
+        fd = root / child / "fd" / "1"
+        try:
+            tty = os.readlink(fd)
+        except OSError:
+            continue
+        if tty.startswith("/dev/pts/"):
+            ptys.append(tty)
+    return ptys
+
+
+def _terminal_ptys() -> list[str]:
+    """Pty paths of shells running inside known terminal emulators."""
+    ptys: list[str] = []
+    if not have("pgrep"):
+        return ptys
+    for name in _OSC_TERMINALS:
+        found = run(["pgrep", "-x", name], timeout=5)
+        if found.returncode != 0:
+            continue
+        for pid in (found.stdout or "").split():
+            ptys.extend(_child_ptys(pid))
+    return list(dict.fromkeys(ptys))
+
+
+def apply_omarchy_terminal_sequences(colors_file: Path | None = None) -> bool:
+    """Replay Omarchy's shell OSC palette into already-open terminals.
+
+    ``omarchy-theme-osc`` is what a new shell prints. Wallust's own sequences
+    are a different palette and are not used on Omarchy.
+    """
+    if colors_file is None:
+        colors_file = home() / ".local" / "state" / "omarchy" / "current" / "theme" / "colors.toml"
+    if not colors_file.is_file() or not have("omarchy-theme-osc"):
+        return False
+    result = run(["omarchy-theme-osc", str(colors_file)], timeout=10)
+    payload = result.stdout or ""
+    if result.returncode != 0 or not payload:
+        return False
+    data = payload.encode("utf-8")
+    wrote = False
+    for tty in _terminal_ptys():
+        if not tty.startswith("/dev/pts/"):
+            continue
+        try:
+            fd = os.open(tty, os.O_WRONLY | os.O_NOCTTY)
+        except OSError as e:
+            log.debug("omarchy OSC: cannot open %s: %s", tty, e)
+            continue
+        try:
+            os.write(fd, data)
+            wrote = True
+        except OSError as e:
+            log.debug("omarchy OSC: write %s failed: %s", tty, e)
+        finally:
+            os.close(fd)
+    return wrote
+
+
 def refresh_browser_policy(ctx: WallpaperContext) -> bool:
     """Re-tint Chromium-family browser chrome from the freshly rendered theme.
 
@@ -1112,6 +1192,15 @@ class OmarchyThemeOp:
                 colors if colors.is_file() else colors_file,
                 shell if shell.is_file() else None,
             )
+        if palette_changed and not os.environ.get("PYTEST_CURRENT_TEST"):
+            # After ghostty/kitty reload. A new shell prints omarchy-theme-osc,
+            # which overrides the terminal config; replay that into open windows.
+            # The pytest guard keeps theme-op tests from painting a real terminal
+            # with the fixture palette (those tests do not mock this helper).
+            if apply_omarchy_terminal_sequences():
+                debug_op(self.name, "terminal OSC from omarchy-theme-osc", ctx)
+            else:
+                debug_op(self.name, "omarchy terminal OSC skipped", ctx)
         return True
 
 

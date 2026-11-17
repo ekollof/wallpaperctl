@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -1777,6 +1778,43 @@ def test_remove_omarchy_conflicts(monkeypatch, tmp_path, capsys):
     assert not hp.exists()
     assert not fc.exists()
     assert not dark.exists()
+
+
+def test_child_ptys_reads_proc_children(tmp_path):
+    proc = tmp_path / "proc"
+    pid = "10"
+    child = "11"
+    (proc / pid / "task" / pid).mkdir(parents=True)
+    (proc / pid / "task" / pid / "children").write_text(child + "\n", encoding="utf-8")
+    fd = proc / child / "fd"
+    fd.mkdir(parents=True)
+    (fd / "1").symlink_to("/dev/pts/7")
+    assert tom._child_ptys(pid, proc_root=proc) == ["/dev/pts/7"]
+
+
+def test_apply_omarchy_terminal_sequences_writes_pty(tmp_path, monkeypatch):
+    colors = tmp_path / "colors.toml"
+    colors.write_text('background = "#000b03"\n', encoding="utf-8")
+    sink = tmp_path / "pty"
+    sink.write_bytes(b"")
+    payload = "\033]11;#000b03\007"
+
+    def fake_run(args, **kwargs):
+        assert args == ["omarchy-theme-osc", str(colors)]
+        return type("R", (), {"returncode": 0, "stdout": payload, "stderr": ""})()
+
+    real_open = os.open
+
+    def fake_open(path, flags):
+        assert path == "/dev/pts/7"
+        return real_open(sink, flags)
+
+    monkeypatch.setattr(tom, "have", lambda cmd: cmd == "omarchy-theme-osc")
+    monkeypatch.setattr(tom, "run", fake_run)
+    monkeypatch.setattr(tom, "_terminal_ptys", lambda: ["/dev/pts/7"])
+    monkeypatch.setattr(os, "open", fake_open)
+    assert tom.apply_omarchy_terminal_sequences(colors)
+    assert sink.read_bytes() == payload.encode()
 
 
 def test_leftover_overlay_packages(monkeypatch):
